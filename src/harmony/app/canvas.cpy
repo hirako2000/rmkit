@@ -24,8 +24,9 @@ namespace app_ui:
     bool erasing = false
     bool full_redraw = false
 
-    framebuffer::FBRect dirty_rect
-    shared_ptr<framebuffer::FileFB> vfb
+    shared_ptr<framebuffer::VirtualFB> vfb
+    vector<shared_ptr<framebuffer::FileFB>> layers
+    int cur_layer = 1
 
     Brush* curr_brush
     Brush* eraser
@@ -40,12 +41,10 @@ namespace app_ui:
 
       fb->dither = framebuffer::DITHER::BAYER_2
       self.load_vfb()
-      fbcopy := shared_ptr<remarkable_color>((remarkable_color*) malloc(self.byte_size))
       snapshot := make_shared<framebuffer::Snapshot>(w, h)
       snapshot->compress(self.fb->fbmem, self.fb->byte_size)
 
       self.undo_stack.push_back(snapshot)
-      fb->reset_dirty(self.dirty_rect)
 
       self.eraser = brush::ERASER
       self.set_brush(brush::ERASER)
@@ -73,15 +72,26 @@ namespace app_ui:
     void reset():
       memset(self.fb->fbmem, WHITE, self.byte_size)
       memset(vfb->fbmem, WHITE, self.byte_size)
+      for i := 0; i < layers.size(); i++:
+        if i == 0:
+          layers[i]->draw_rect(0, 0, layers[i]->width, layers[i]->height, WHITE)
+        else:
+          layers[i]->draw_rect(0, 0, layers[i]->width, layers[i]->height, TRANSPARENT)
+
       self.curr_brush->reset()
       push_undo()
+
+    void swap_layer():
+      cur_layer = !cur_layer
+      curr_brush->set_framebuffer(self.layers[cur_layer].get())
+      self.mark_redraw()
 
     void set_brush(Brush* brush):
       self.curr_brush = brush
       brush->reset()
       brush->color = self.stroke_color
       brush->set_stroke_width(self.stroke_width)
-      brush->set_framebuffer(self.vfb.get())
+      brush->set_framebuffer(self.layers[cur_layer].get())
 
     bool ignore_event(input::SynMotionEvent &ev):
       return input::is_touch_event(ev) != NULL
@@ -108,13 +118,39 @@ namespace app_ui:
       brush->stroke_start(ev.x, ev.y,ev.tilt_x, ev.tilt_y, ev.pressure)
 
     void mark_redraw():
-      self.dirty = 1
+      if !self.dirty:
+        self.dirty = 1
+        ui::MainLoop::full_refresh()
+
       self.full_redraw = true
       px_width, px_height = self.fb->get_display_size()
       vfb->dirty_area = {0, 0, px_width, px_height}
+      layers[cur_layer]->dirty_area = {0, 0, px_width, px_height}
+
+    void render_layers():
+      dr := self.layers[cur_layer]->dirty_area
+      vfb->update_dirty(vfb->dirty_area, dr.x0, dr.y0)
+      vfb->update_dirty(vfb->dirty_area, dr.x1, dr.y1)
+
+      // set base of vfb to white
+      for int i = dr.y0; i < dr.y1; i++:
+        for int j = dr.x0; j < dr.x1; j++:
+            vfb->_set_pixel(j, i, WHITE)
+
+      remarkable_color c
+      remarkable_color tr = TRANSPARENT
+      for int l = 0; l < layers.size(); l++:
+        layer := layers[l]
+        for int i = dr.y0; i < dr.y1; i++:
+          for int j = dr.x0; j < dr.x1; j++:
+            c = layer->_get_pixel(j, i)
+            if c != tr:
+              vfb->_set_pixel(j, i, c)
 
     void render():
-      dirty_rect = self.vfb->dirty_area
+      render_layers()
+
+      dirty_rect := self.vfb->dirty_area
       for int i = dirty_rect.y0; i < dirty_rect.y1; i++:
         memcpy(&fb->fbmem[i*fb->width + dirty_rect.x0], &vfb->fbmem[i*fb->width + dirty_rect.x0],
           (dirty_rect.x1 - dirty_rect.x0) * sizeof(remarkable_color))
@@ -122,6 +158,9 @@ namespace app_ui:
       self.fb->dirty_area = vfb->dirty_area
       self.fb->dirty = 1
       vfb->reset_dirty(vfb->dirty_area)
+
+      for i := 0; i < layers.size(); i++:
+        layers[i]->reset_dirty(layers[i]->dirty_area)
 
     // {{{ SAVING / LOADING
     string save():
@@ -137,14 +176,29 @@ namespace app_ui:
       if self.vfb != nullptr:
         msync(self.vfb->fbmem, self.byte_size, MS_SYNC)
 
-      char filename[PATH_MAX]
-      sprintf(filename, "%s/fb.%i.raw", SAVE_DIR, self.page_idx)
-      self.vfb = make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height)
+      self.vfb = make_shared<framebuffer::VirtualFB>(self.fb->width, self.fb->height)
       self.vfb->dither = framebuffer::DITHER::BAYER_2
+
+      self.layers.clear()
+      // layer 0 is bg
+      char filename[PATH_MAX]
+      sprintf(filename, "%s/bg.%i.raw", SAVE_DIR, self.page_idx)
+      self.layers.push_back(
+        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height))
+
+      // layer 1 is fg
+      sprintf(filename, "%s/fg.%i.raw", SAVE_DIR, self.page_idx)
+      self.layers.push_back(
+        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height))
+      cur_layer = 1
+
+
+      for auto &layer : layers:
+        framebuffer::reset_dirty(layer->dirty_area)
+
       memcpy(fb->fbmem, vfb->fbmem, self.byte_size)
 
-      self.dirty = 1
-      self.full_redraw = 1
+      self.mark_redraw()
       ui::MainLoop::refresh()
 
     int MAX_PAGES = 10
@@ -170,12 +224,11 @@ namespace app_ui:
       if STATE.disable_history:
         return
 
-      dirty_rect = self.vfb->dirty_area
+      dirty_rect := self.vfb->dirty_area
       debug "ADDING TO UNDO STACK, DIRTY AREA IS", \
         dirty_rect.x0, dirty_rect.y0, dirty_rect.x1, dirty_rect.y1
       remarkable_color* fbcopy = (remarkable_color*) malloc(self.byte_size)
       memcpy(fbcopy, vfb->fbmem, self.byte_size)
-      fb->reset_dirty(self.dirty_rect)
 
       ui::TaskQueue::add_task([=]() {
         snapshot := make_shared<framebuffer::Snapshot>(w, h)

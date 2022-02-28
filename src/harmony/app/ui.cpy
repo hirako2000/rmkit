@@ -248,6 +248,27 @@ namespace app_ui:
       self.dirty = 1
       self.canvas->redo()
 
+  class LayerButton: public ui::Button:
+    public:
+    Canvas *canvas
+    LayerButton(int x, y, w, h, Canvas *c): ui::Button(x,y,w,h,"fg"):
+      self.canvas = c
+      before_render()
+
+    void before_render():
+      if self.canvas->cur_layer == 0:
+        self.text = "bg"
+      else:
+        self.text = "fg"
+      ui::Button::before_render()
+
+    void render():
+      ui::Button::render()
+
+    void on_mouse_click(input::SynMotionEvent &ev):
+      self.dirty = 1
+      self.canvas->swap_layer()
+
   class HideButton: public ui::Button:
     public:
     ui::Layout *toolbar, *minibar

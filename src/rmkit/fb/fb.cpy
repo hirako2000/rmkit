@@ -185,6 +185,9 @@ namespace framebuffer:
     inline void _set_pixel(int x, int y, remarkable_color c):
       self._set_pixel(&self.fbmem[y*self.width+x], x, y, c)
 
+    inline remarkable_color _get_pixel(int x, int y):
+      return self.fbmem[y*self.width+x]
+
     virtual tuple<int,int> get_virtual_size():
       debug "GET VIRTUAL SIZE NOT IMPLEMENTED"
       exit(1)

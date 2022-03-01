@@ -87,12 +87,6 @@ namespace app_ui:
       self.curr_brush->reset()
       push_undo()
 
-    void swap_layer():
-      cur_layer++
-      cur_layer %= layers.size()
-      curr_brush->set_framebuffer(self.layers[cur_layer].fb.get())
-      self.mark_redraw()
-
     void set_brush(Brush* brush):
       self.curr_brush = brush
       brush->reset()
@@ -180,7 +174,7 @@ namespace app_ui:
 
       memcpy(fb->fbmem, vfb->fbmem, self.byte_size)
 
-      self.mark_redraw()
+      mark_redraw()
       ui::MainLoop::refresh()
 
     int MAX_PAGES = 10
@@ -259,14 +253,32 @@ namespace app_ui:
 
       return layer_id
 
+    void delete_layer(int i):
+      self.clear_layer(i)
+      layers.erase(layers.begin() + i)
+      mark_redraw()
+
     void clear_layer(int i):
       layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, TRANSPARENT)
+      mark_redraw()
 
     void toggle_layer(int i):
       layers[i].visible = !layers[i].visible
-      mark_redraw()
       layers[i].fb->dirty_area = {0, 0, layers[i].fb->width, layers[i].fb->height}
-      debug "TOGGLING LAYER", i
+      mark_redraw()
+
+    bool is_layer_visible(int i):
+      return layers[i].visible
+
+    void swap_layer():
+      cur_layer++
+      cur_layer %= layers.size()
+      curr_brush->set_framebuffer(self.layers[cur_layer].fb.get())
+      mark_redraw()
+
+    void select_layer(int i):
+      cur_layer = i
+      mark_redraw()
 
     void swap_layers(int a, b):
       if a >= layers.size() or b >= layers.size() or a < 0 or b < 0:

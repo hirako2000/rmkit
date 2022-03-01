@@ -248,12 +248,120 @@ namespace app_ui:
       self.dirty = 1
       self.canvas->redo()
 
+  class LayerDialog: public ui::Pager:
+    public:
+    Canvas *canvas
+
+    LayerDialog(int x, y, w, h, Canvas* c): ui::Pager(x, y, w, h, self):
+      self.set_title("")
+      self.canvas = c
+      self.opt_h = 55
+      self.page_size = (self.h - 100) / self.opt_h
+      self.buttons = {"New Layer"}
+
+
+    void on_row_selected(string name):
+      debug "ROW SELECTED", name
+      canvas->select_layer(get_layer(name))
+      ui::MainLoop::hide_overlay()
+
+    void populate_and_show():
+      self.populate()
+      self.setup_for_render()
+      self.show()
+
+    void on_button_selected(string name):
+      debug "Button Selected:", name
+      if name.find("Layer") == 0:
+        on_row_selected(name)
+
+      if name == "New Layer":
+        debug "Adding New Layer"
+        canvas->new_layer()
+        self.populate_and_show()
+
+
+    string layer_name(int i):
+      return "Layer " + to_string(i)
+
+    int get_layer(string name):
+      tokens := str_utils::split(name, ' ')
+      return atoi(tokens[1].c_str())
+
+    void populate():
+      self.options.clear()
+      for int i = canvas->layers.size()-1; i >= 0; i--:
+        options.push_back(layer_name(i))
+
+    void add_buttons(ui::HorizontalLayout *button_bar):
+      // Skip the pager buttons
+      ui::Dialog::add_buttons(button_bar)
+
+    string visible_icon(int i):
+      return canvas->is_layer_visible(i) ? "V" : "H"
+
+    void render_row(ui::HorizontalLayout *row, string option):
+      self.layout->pack_start(row)
+      layer_id := get_layer(option)
+      bw := 150
+      offset := 0
+
+      debug "RENDERING ROW", option
+      style := ui::Stylesheet().justify_left().valign_middle()
+
+      // make a button for each of the following: toggle visible,
+      // delete, merge down, clear
+      visible_button := new ui::Button(0, 0, 50, self.opt_h, visible_icon(layer_id))
+      visible_button->mouse.click += PLS_LAMBDA(auto &ev):
+        debug "Visible Button Clicked"
+        canvas->toggle_layer(layer_id)
+        visible_button->text = visible_icon(layer_id)
+      ;
+      offset += 50
+      visible_button->set_style(style.justify_center())
+
+      delete_button := new ui::Button(0, 0, bw, self.opt_h, "Delete")
+      delete_button->mouse.click += PLS_LAMBDA(auto &ev):
+        debug "Delete Button Clicked"
+        canvas->delete_layer(layer_id)
+        self.populate_and_show()
+      ;
+      offset += bw
+      delete_button->set_style(style.justify_center())
+
+//      merge_button := new ui::Button(0, 0, bw, self.opt_h, "Merge")
+//      merge_button->mouse.click += PLS_LAMBDA(auto &ev):
+//        debug "Merge Button Clicked"
+//      ;
+//      merge_button->set_style(style.justify_center())
+//      offset += bw
+
+      // Layer Button
+      d := new ui::DialogButton(0, 0, self.w - (offset + 10), self.opt_h, self, option)
+      d->x_padding = 10
+      d->y_padding = 5
+      if option == layer_name(canvas->cur_layer):
+        d->set_style(style.border_left())
+      else:
+        d->set_style(style)
+
+
+      row->pack_start(visible_button)
+      row->pack_start(d)
+      row->pack_end(delete_button)
+      // row->pack_end(merge_button)
+
   class LayerButton: public ui::Button:
     public:
     Canvas *canvas
-    LayerButton(int x, y, w, h, Canvas *c): ui::Button(x,y,w,h,"fg"):
+    LayerDialog *ld
+
+    LayerButton(int x, y, w, h, Canvas *c): ui::Button(x,y,w,h,"...")
       self.canvas = c
-      before_render()
+      self.ld = new LayerDialog(0, 0, 800, 600, c)
+
+    void on_mouse_click(input::SynMotionEvent &ev):
+      self.ld->populate_and_show()
 
     void before_render():
       if canvas->layers[canvas->cur_layer].visible:
@@ -261,47 +369,6 @@ namespace app_ui:
       else:
         text = "X" + to_string(canvas->cur_layer)
       ui::Button::before_render()
-
-    void render():
-      ui::Button::render()
-
-    void on_mouse_click(input::SynMotionEvent &ev):
-      self.dirty = 1
-      canvas->swap_layer()
-
-  string NEW = "New Layer", \
-    TOGGLE = "Toggle Layer", \
-    MERGE = "Merge Down", \
-    DELETE = "Delete Layer"
-
-  class ManageLayerButton: public ui::TextDropdown:
-    public:
-    Canvas *canvas
-
-    ManageLayerButton(int x, y, w, h, Canvas *c): TextDropdown(x,y,w,h,"...")
-      self.canvas = c
-      ds := self.add_section("")
-      ds->add_options({DOTS, DELETE, MERGE, DOTS, TOGGLE, NEW })
-      self.autosize_options()
-      self.text = "..."
-
-    void on_select(int i):
-      option := self.options[i]->name
-      debug "RUNNING", option
-      if option == NEW:
-        canvas->cur_layer = canvas->new_layer()
-        canvas->clear_layer(canvas->cur_layer)
-      else if option == TOGGLE:
-        canvas->toggle_layer(canvas->cur_layer)
-      else if option == MERGE:
-        canvas->merge_layers(canvas->cur_layer - 1, canvas->cur_layer)
-      else if option == DELETE:
-        // canvas->delete_layer(canvas->cur_layer)
-        pass
-      else if option == CLEAR:
-        canvas->clear_layer(canvas->cur_layer)
-
-      self.text = "..."
 
   class HideButton: public ui::Button:
     public:

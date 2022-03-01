@@ -256,10 +256,10 @@ namespace app_ui:
       before_render()
 
     void before_render():
-      if self.canvas->cur_layer == 0:
-        self.text = "bg"
+      if canvas->layers[canvas->cur_layer].visible:
+        text = "L" + to_string(canvas->cur_layer)
       else:
-        self.text = "fg"
+        text = "X" + to_string(canvas->cur_layer)
       ui::Button::before_render()
 
     void render():
@@ -267,7 +267,41 @@ namespace app_ui:
 
     void on_mouse_click(input::SynMotionEvent &ev):
       self.dirty = 1
-      self.canvas->swap_layer()
+      canvas->swap_layer()
+
+  string NEW = "New Layer", \
+    TOGGLE = "Toggle Layer", \
+    MERGE = "Merge Down", \
+    DELETE = "Delete Layer"
+
+  class ManageLayerButton: public ui::TextDropdown:
+    public:
+    Canvas *canvas
+
+    ManageLayerButton(int x, y, w, h, Canvas *c): TextDropdown(x,y,w,h,"...")
+      self.canvas = c
+      ds := self.add_section("")
+      ds->add_options({DOTS, DELETE, MERGE, DOTS, TOGGLE, NEW })
+      self.autosize_options()
+      self.text = "..."
+
+    void on_select(int i):
+      option := self.options[i]->name
+      debug "RUNNING", option
+      if option == NEW:
+        canvas->cur_layer = canvas->new_layer()
+        canvas->clear_layer(canvas->cur_layer)
+      else if option == TOGGLE:
+        canvas->toggle_layer(canvas->cur_layer)
+      else if option == MERGE:
+        canvas->merge_layers(canvas->cur_layer - 1, canvas->cur_layer)
+      else if option == DELETE:
+        // canvas->delete_layer(canvas->cur_layer)
+        pass
+      else if option == CLEAR:
+        canvas->clear_layer(canvas->cur_layer)
+
+      self.text = "..."
 
   class HideButton: public ui::Button:
     public:

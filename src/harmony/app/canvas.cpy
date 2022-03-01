@@ -25,7 +25,13 @@ namespace app_ui:
     bool full_redraw = false
 
     shared_ptr<framebuffer::VirtualFB> vfb
-    vector<shared_ptr<framebuffer::FileFB>> layers
+
+    struct Layer:
+      shared_ptr<framebuffer::FileFB> fb
+      bool visible = true
+    ;
+
+    vector<Layer> layers
     int cur_layer = 1
 
     Brush* curr_brush
@@ -74,16 +80,17 @@ namespace app_ui:
       memset(vfb->fbmem, WHITE, self.byte_size)
       for i := 0; i < layers.size(); i++:
         if i == 0:
-          layers[i]->draw_rect(0, 0, layers[i]->width, layers[i]->height, WHITE)
+          layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, WHITE)
         else:
-          layers[i]->draw_rect(0, 0, layers[i]->width, layers[i]->height, TRANSPARENT)
+          layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, TRANSPARENT)
 
       self.curr_brush->reset()
       push_undo()
 
     void swap_layer():
-      cur_layer = !cur_layer
-      curr_brush->set_framebuffer(self.layers[cur_layer].get())
+      cur_layer++
+      cur_layer %= layers.size()
+      curr_brush->set_framebuffer(self.layers[cur_layer].fb.get())
       self.mark_redraw()
 
     void set_brush(Brush* brush):
@@ -91,12 +98,14 @@ namespace app_ui:
       brush->reset()
       brush->color = self.stroke_color
       brush->set_stroke_width(self.stroke_width)
-      brush->set_framebuffer(self.layers[cur_layer].get())
+      brush->set_framebuffer(self.layers[cur_layer].fb.get())
 
     bool ignore_event(input::SynMotionEvent &ev):
       return input::is_touch_event(ev) != NULL
 
     void on_mouse_move(input::SynMotionEvent &ev):
+      if not self.layers[cur_layer].visible:
+        return
       brush := self.erasing ? self.eraser : self.curr_brush
       brush->stroke(ev.x, ev.y, ev.tilt_x, ev.tilt_y, ev.pressure)
       brush->update_last_pos(ev.x, ev.y, ev.tilt_x, ev.tilt_y, ev.pressure)
@@ -125,7 +134,7 @@ namespace app_ui:
       self.full_redraw = true
       px_width, px_height = self.fb->get_display_size()
       vfb->dirty_area = {0, 0, px_width, px_height}
-      layers[cur_layer]->dirty_area = {0, 0, px_width, px_height}
+      layers[cur_layer].fb->dirty_area = {0, 0, px_width, px_height}
 
     void render():
       render_layers()
@@ -140,7 +149,7 @@ namespace app_ui:
       vfb->reset_dirty(vfb->dirty_area)
 
       for i := 0; i < layers.size(); i++:
-        layers[i]->reset_dirty(layers[i]->dirty_area)
+        layers[i].fb->reset_dirty(layers[i].fb->dirty_area)
 
     // {{{ SAVING / LOADING
     string save():
@@ -167,7 +176,7 @@ namespace app_ui:
 
 
       for auto &layer : layers:
-        framebuffer::reset_dirty(layer->dirty_area)
+        framebuffer::reset_dirty(layer.fb->dirty_area)
 
       memcpy(fb->fbmem, vfb->fbmem, self.byte_size)
 
@@ -238,35 +247,47 @@ namespace app_ui:
 
     // {{{ LAYER STUFF
     int new_layer():
-      layer_id := layers.size()
+      int layer_id = layers.size()
       char filename[PATH_MAX]
       sprintf(filename, "%s/layer.%i.%i.raw", SAVE_DIR, layer_id, self.page_idx)
-      self.layers.push_back(
-        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height))
+      Layer layer = %{
+        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height), 
+        true }
+      layer.fb->dirty_area = {0, 0, self.fb->width, self.fb->height}
+      self.layers.push_back(layer)
+      debug "CREATED LAYER", layer_id
 
       return layer_id
 
     void clear_layer(int i):
-      layers[i]->draw_rect(0, 0, layers[i]->width, layers[i]->height, TRANSPARENT)
+      layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, TRANSPARENT)
+
+    void toggle_layer(int i):
+      layers[i].visible = !layers[i].visible
+      mark_redraw()
+      layers[i].fb->dirty_area = {0, 0, layers[i].fb->width, layers[i].fb->height}
+      debug "TOGGLING LAYER", i
 
     void swap_layers(int a, b):
-      if a >= layers.size() or b >= layers.size():
+      if a >= layers.size() or b >= layers.size() or a < 0 or b < 0:
         debug "LAYER INDEX IS OUT OF BOUND, CAN'T SWAP:", a, b
         return
 
-      framebuffer::VirtualFB tmp(layers[a]->width, layers[a]->height)
-      memcpy(tmp.fbmem, layers[a]->fbmem, self.byte_size)
-      memcpy(layers[a]->fbmem, layers[b]->fbmem, self.byte_size)
-      memcpy(layers[b]->fbmem, tmp.fbmem, self.byte_size)
+      framebuffer::VirtualFB tmp(layers[a].fb->width, layers[a].fb->height)
+      memcpy(tmp.fbmem, layers[a].fb->fbmem, self.byte_size)
+      memcpy(layers[a].fb->fbmem, layers[b].fb->fbmem, self.byte_size)
+      memcpy(layers[b].fb->fbmem, tmp.fbmem, self.byte_size)
+
+      mark_redraw()
 
     // merges src onto dst, overwriting existing pixels in src
     void merge_layers(int dst, src):
-      if dst >= layers.size() or src >= layers.size():
+      if dst >= layers.size() or src >= layers.size() or dst < 0 or src < 0:
         debug "LAYER INDEX IS OUT OF BOUND, CAN'T MERGE:", dst, src
         return
 
-      dstfb := layers[dst]
-      srcfb := layers[src]
+      dstfb := layers[dst].fb
+      srcfb := layers[src].fb
       remarkable_color c
       remarkable_color tr = TRANSPARENT
       for int i = 0; i < srcfb->height; i++:
@@ -276,9 +297,10 @@ namespace app_ui:
             dstfb->_set_pixel(j, i, c)
 
       clear_layer(src)
+      mark_redraw()
 
     void render_layers():
-      dr := self.layers[cur_layer]->dirty_area
+      dr := self.layers[cur_layer].fb->dirty_area
       vfb->update_dirty(vfb->dirty_area, dr.x0, dr.y0)
       vfb->update_dirty(vfb->dirty_area, dr.x1, dr.y1)
 
@@ -290,7 +312,10 @@ namespace app_ui:
       remarkable_color c
       remarkable_color tr = TRANSPARENT
       for int l = 0; l < layers.size(); l++:
-        layer := layers[l]
+        if not layers[l].visible:
+          continue
+
+        layer := layers[l].fb
         for int i = dr.y0; i < dr.y1; i++:
           for int j = dr.x0; j < dr.x1; j++:
             c = layer->_get_pixel(j, i)

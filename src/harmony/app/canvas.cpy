@@ -127,26 +127,6 @@ namespace app_ui:
       vfb->dirty_area = {0, 0, px_width, px_height}
       layers[cur_layer]->dirty_area = {0, 0, px_width, px_height}
 
-    void render_layers():
-      dr := self.layers[cur_layer]->dirty_area
-      vfb->update_dirty(vfb->dirty_area, dr.x0, dr.y0)
-      vfb->update_dirty(vfb->dirty_area, dr.x1, dr.y1)
-
-      // set base of vfb to white
-      for int i = dr.y0; i < dr.y1; i++:
-        for int j = dr.x0; j < dr.x1; j++:
-            vfb->_set_pixel(j, i, WHITE)
-
-      remarkable_color c
-      remarkable_color tr = TRANSPARENT
-      for int l = 0; l < layers.size(); l++:
-        layer := layers[l]
-        for int i = dr.y0; i < dr.y1; i++:
-          for int j = dr.x0; j < dr.x1; j++:
-            c = layer->_get_pixel(j, i)
-            if c != tr:
-              vfb->_set_pixel(j, i, c)
-
     void render():
       render_layers()
 
@@ -181,16 +161,9 @@ namespace app_ui:
 
       self.layers.clear()
       // layer 0 is bg
-      char filename[PATH_MAX]
-      sprintf(filename, "%s/bg.%i.raw", SAVE_DIR, self.page_idx)
-      self.layers.push_back(
-        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height))
-
-      // layer 1 is fg
-      sprintf(filename, "%s/fg.%i.raw", SAVE_DIR, self.page_idx)
-      self.layers.push_back(
-        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height))
-      cur_layer = 1
+      self.new_layer()
+      // layer 1 is bg
+      cur_layer = self.new_layer()
 
 
       for auto &layer : layers:
@@ -262,3 +235,66 @@ namespace app_ui:
         self.undo_stack.push_back(redofb)
         ui::MainLoop::full_refresh()
     // }}}
+
+    // {{{ LAYER STUFF
+    int new_layer():
+      layer_id := layers.size()
+      char filename[PATH_MAX]
+      sprintf(filename, "%s/layer.%i.%i.raw", SAVE_DIR, layer_id, self.page_idx)
+      self.layers.push_back(
+        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height))
+
+      return layer_id
+
+    void clear_layer(int i):
+      layers[i]->draw_rect(0, 0, layers[i]->width, layers[i]->height, TRANSPARENT)
+
+    void swap_layers(int a, b):
+      if a >= layers.size() or b >= layers.size():
+        debug "LAYER INDEX IS OUT OF BOUND, CAN'T SWAP:", a, b
+        return
+
+      framebuffer::VirtualFB tmp(layers[a]->width, layers[a]->height)
+      memcpy(tmp.fbmem, layers[a]->fbmem, self.byte_size)
+      memcpy(layers[a]->fbmem, layers[b]->fbmem, self.byte_size)
+      memcpy(layers[b]->fbmem, tmp.fbmem, self.byte_size)
+
+    // merges src onto dst, overwriting existing pixels in src
+    void merge_layers(int dst, src):
+      if dst >= layers.size() or src >= layers.size():
+        debug "LAYER INDEX IS OUT OF BOUND, CAN'T MERGE:", dst, src
+        return
+
+      dstfb := layers[dst]
+      srcfb := layers[src]
+      remarkable_color c
+      remarkable_color tr = TRANSPARENT
+      for int i = 0; i < srcfb->height; i++:
+        for int j = 0; j < srcfb->width; j++:
+          c = srcfb->_get_pixel(j, i)
+          if c != tr:
+            dstfb->_set_pixel(j, i, c)
+
+      clear_layer(src)
+
+    void render_layers():
+      dr := self.layers[cur_layer]->dirty_area
+      vfb->update_dirty(vfb->dirty_area, dr.x0, dr.y0)
+      vfb->update_dirty(vfb->dirty_area, dr.x1, dr.y1)
+
+      // set base of vfb to white
+      for int i = dr.y0; i < dr.y1; i++:
+        for int j = dr.x0; j < dr.x1; j++:
+            vfb->_set_pixel(j, i, WHITE)
+
+      remarkable_color c
+      remarkable_color tr = TRANSPARENT
+      for int l = 0; l < layers.size(); l++:
+        layer := layers[l]
+        for int i = dr.y0; i < dr.y1; i++:
+          for int j = dr.x0; j < dr.x1; j++:
+            c = layer->_get_pixel(j, i)
+            if c != tr:
+              vfb->_set_pixel(j, i, c)
+    // }}}
+

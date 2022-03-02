@@ -135,7 +135,7 @@ namespace app_ui:
           self->fb->draw_rect(self.x, self.y, self.w, self.h, GRAY, false)
 
   string  ABOUT = "about",\
-          CLEAR = "clear",\
+          CLEAR = "new",\
           DOTS  = "...",\
           QUIT  = "exit",\
           SAVE  = "save",\
@@ -367,10 +367,14 @@ namespace app_ui:
 
     void before_render():
       if canvas->layers[canvas->cur_layer].visible:
-        text = "L" + to_string(canvas->cur_layer)
-      else:
-        text = "X" + to_string(canvas->cur_layer)
+      text = "Layer " + to_string(canvas->cur_layer)
       ui::Button::before_render()
+
+    void render():
+      ui::Button::render()
+      if !canvas->layers[canvas->cur_layer].visible:
+        fb->draw_line(x, y, x+w, y+h, 4, BLACK)
+
 
   class HideButton: public ui::Button:
     public:

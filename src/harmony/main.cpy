@@ -75,7 +75,7 @@ class App:
     brush_config_button->set_option_size(200, TOOLBAR_HEIGHT)
     brush_config_button->set_option_offset(0, -TOOLBAR_HEIGHT)
     toolbar->pack_start(brush_config_button)
-    toolbar->pack_start(new app_ui::LayerButton(0, 0, ICON_WIDTH, TOOLBAR_HEIGHT, canvas))
+    toolbar->pack_start(new app_ui::LayerButton(0, 0, 100, TOOLBAR_HEIGHT, canvas))
 
     toolbar->pack_center(new app_ui::LiftBrushButton(0, 0, 114, 100, canvas))
 

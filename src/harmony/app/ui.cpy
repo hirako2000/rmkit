@@ -139,7 +139,9 @@ namespace app_ui:
           DOTS  = "...",\
           QUIT  = "exit",\
           SAVE  = "save",\
-          LOAD  = "load"
+          LOAD  = "load",\
+          EXPORT = "export",\
+          IMPORT = "import"
   class ManageButton: public ui::TextDropdown:
     public:
     Canvas *canvas
@@ -152,7 +154,7 @@ namespace app_ui:
     ManageButton(int x, y, w, h, Canvas *c): TextDropdown(x,y,w,h,"...")
       self.canvas = c
       ds := self.add_section("")
-      ds->add_options({DOTS, CLEAR, SAVE, LOAD, QUIT, DOTS, ABOUT})
+      ds->add_options({QUIT, DOTS, CLEAR, SAVE, LOAD, DOTS, EXPORT, IMPORT, DOTS, ABOUT})
       self.text = "..."
 
     void select_exit():
@@ -169,14 +171,14 @@ namespace app_ui:
         self.canvas->reset()
       if option == QUIT:
         self.select_exit()
-      if option == SAVE:
-        filename := self.canvas->save()
+      if option == EXPORT:
+        filename := self.canvas->save_png()
         if self.sd == NULL:
           self.sd = new SaveDialog(0, 0, DIALOG_WIDTH*2, DIALOG_HEIGHT)
         title := "Saved as " + filename
         self.sd->set_title(title)
         self.sd->show()
-      if option == LOAD:
+      if option == IMPORT:
         if self.ld == NULL:
           self.ld = new LoadDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, self.canvas)
         self.ld->populate()

@@ -78,14 +78,12 @@ namespace app_ui:
     void reset():
       memset(self.fb->fbmem, WHITE, self.byte_size)
       memset(vfb->fbmem, WHITE, self.byte_size)
-      for i := 0; i < layers.size(); i++:
-        if i == 0:
-          layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, WHITE)
-        else:
-          layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, TRANSPARENT)
+      self.layers.clear()
+      self.select_layer(self.new_layer(true))
 
       self.curr_brush->reset()
       push_undo()
+      mark_redraw()
 
     void set_brush(Brush* brush):
       self.curr_brush = brush
@@ -146,14 +144,13 @@ namespace app_ui:
         layers[i].fb->reset_dirty(layers[i].fb->dirty_area)
 
     // {{{ SAVING / LOADING
-    string save():
+    string save_png():
       return self.vfb->save_lodepng()
 
     void load_from_png(string filename):
-      self.vfb->load_from_png(filename)
-      self.dirty = 1
-      ui::MainLoop::full_refresh()
-      self.push_undo()
+      self.select_layer(self.new_layer(true))
+      self.layers[cur_layer].fb->load_from_png(filename)
+      mark_redraw()
 
     void load_vfb():
       if self.vfb != nullptr:
@@ -163,10 +160,7 @@ namespace app_ui:
       self.vfb->dither = framebuffer::DITHER::BAYER_2
 
       self.layers.clear()
-      // layer 0 is bg
-      self.new_layer()
-      // layer 1 is bg
-      cur_layer = self.new_layer()
+      self.select_layer(self.new_layer())
 
 
       for auto &layer : layers:
@@ -240,14 +234,17 @@ namespace app_ui:
     // }}}
 
     // {{{ LAYER STUFF
-    int new_layer():
+    int new_layer(bool clear_layer=false):
       int layer_id = layers.size()
       char filename[PATH_MAX]
       sprintf(filename, "%s/layer.%i.%i.raw", SAVE_DIR, layer_id, self.page_idx)
       Layer layer = %{
-        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height), 
+        make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height),
         true }
       layer.fb->dirty_area = {0, 0, self.fb->width, self.fb->height}
+      if clear_layer:
+        self.clear_layer(layer_id)
+
       self.layers.push_back(layer)
       debug "CREATED LAYER", layer_id
 
@@ -255,7 +252,8 @@ namespace app_ui:
 
     void delete_layer(int i):
       self.clear_layer(i)
-      layers.erase(layers.begin() + i)
+      if layers.size() > 1:
+        layers.erase(layers.begin() + i)
       mark_redraw()
 
     void clear_layer(int i):
@@ -278,6 +276,8 @@ namespace app_ui:
 
     void select_layer(int i):
       cur_layer = i
+      if curr_brush != NULL:
+        curr_brush->set_framebuffer(self.layers[cur_layer].fb.get())
       mark_redraw()
 
     void swap_layers(int a, b):
@@ -326,6 +326,8 @@ namespace app_ui:
       for int l = 0; l < layers.size(); l++:
         if not layers[l].visible:
           continue
+
+        debug "RENDERING LAYER", l, layers[l].visible
 
         layer := layers[l].fb
         for int i = dr.y0; i < dr.y1; i++:

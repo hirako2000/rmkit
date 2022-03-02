@@ -11,11 +11,73 @@
 
 namespace app_ui:
 
+  class Layer:
+    public:
+    bool visible = true
+    int byte_size = 0
+    int w, h
+    shared_ptr<framebuffer::FileFB> fb
+    deque<shared_ptr<framebuffer::Snapshot>> undo_stack;
+    deque<shared_ptr<framebuffer::Snapshot>> redo_stack;
+
+    Layer(int _w, _h, shared_ptr<framebuffer::FileFB> _fb, int _byte_size, bool _visible):
+      w = _w
+      h = _h
+      fb = _fb
+      byte_size = _byte_size
+      visible = _visible
+
+    // {{{ UNDO / REDO STUFF
+    void trim_stacks():
+      while UNDO_STACK_SIZE > 0 && self.undo_stack.size() > UNDO_STACK_SIZE:
+        self.undo_stack.pop_front()
+      while UNDO_STACK_SIZE > 0 && self.redo_stack.size() > UNDO_STACK_SIZE:
+        self.redo_stack.pop_front()
+
+    void push_undo():
+      if STATE.disable_history:
+        return
+
+      dirty_rect := self.fb->dirty_area
+      debug "ADDING TO UNDO STACK, DIRTY AREA IS", \
+        dirty_rect.x0, dirty_rect.y0, dirty_rect.x1, dirty_rect.y1
+      remarkable_color* fbcopy = (remarkable_color*) malloc(self.byte_size)
+      memcpy(fbcopy, fb->fbmem, self.byte_size)
+
+      ui::TaskQueue::add_task([=]() {
+        snapshot := make_shared<framebuffer::Snapshot>(w, h)
+        snapshot->compress(fbcopy, self.byte_size)
+        free(fbcopy)
+
+
+        self.undo_stack.push_back(snapshot)
+        self.redo_stack.clear()
+
+        trim_stacks()
+      })
+
+
+    void undo():
+      if self.undo_stack.size() > 1:
+        // put last fb from undo stack into fb
+        self.redo_stack.push_back(self.undo_stack.back())
+        self.undo_stack.pop_back()
+        undofb := self.undo_stack.back()
+        undofb.get()->decompress(self.fb->fbmem)
+        ui::MainLoop::full_refresh()
+
+    void redo():
+      if self.redo_stack.size() > 0:
+        redofb := self.redo_stack.back()
+        self.redo_stack.pop_back()
+        redofb.get()->decompress(self.fb->fbmem)
+        self.undo_stack.push_back(redofb)
+        ui::MainLoop::full_refresh()
+    // }}}
+
   class Canvas: public ui::Widget:
     public:
     remarkable_color *mem
-    deque<shared_ptr<framebuffer::Snapshot>> undo_stack;
-    deque<shared_ptr<framebuffer::Snapshot>> redo_stack;
     int byte_size
     int stroke_width = 1
     remarkable_color stroke_color = BLACK
@@ -25,11 +87,6 @@ namespace app_ui:
     bool full_redraw = false
 
     shared_ptr<framebuffer::VirtualFB> vfb
-
-    struct Layer:
-      shared_ptr<framebuffer::FileFB> fb
-      bool visible = true
-    ;
 
     vector<Layer> layers
     int cur_layer = 1
@@ -47,10 +104,6 @@ namespace app_ui:
 
       fb->dither = framebuffer::DITHER::BAYER_2
       self.load_vfb()
-      snapshot := make_shared<framebuffer::Snapshot>(w, h)
-      snapshot->compress(self.fb->fbmem, self.fb->byte_size)
-
-      self.undo_stack.push_back(snapshot)
 
       self.eraser = brush::ERASER
       self.set_brush(brush::ERASER)
@@ -82,7 +135,7 @@ namespace app_ui:
       self.select_layer(self.new_layer(true))
 
       self.curr_brush->reset()
-      push_undo()
+      self.layers[cur_layer].push_undo()
       mark_redraw()
 
     void set_brush(Brush* brush):
@@ -106,9 +159,10 @@ namespace app_ui:
     void on_mouse_up(input::SynMotionEvent &ev):
       brush := self.erasing ? self.eraser : self.curr_brush
       brush->stroke_end()
-      self.push_undo()
+      self.layers[cur_layer].push_undo()
       brush->update_last_pos(-1,-1,-1,-1,-1)
       self.dirty = 1
+      ui::MainLoop::refresh()
 
     void on_mouse_hover(input::SynMotionEvent &ev):
       pass
@@ -162,7 +216,6 @@ namespace app_ui:
       self.layers.clear()
       self.select_layer(self.new_layer())
 
-
       for auto &layer : layers:
         framebuffer::reset_dirty(layer.fb->dirty_area)
 
@@ -183,54 +236,13 @@ namespace app_ui:
         self.load_vfb()
     // }}}
 
-    // {{{ UNDO / REDO STUFF
-    void trim_stacks():
-      while UNDO_STACK_SIZE > 0 && self.undo_stack.size() > UNDO_STACK_SIZE:
-        self.undo_stack.pop_front()
-      while UNDO_STACK_SIZE > 0 && self.redo_stack.size() > UNDO_STACK_SIZE:
-        self.redo_stack.pop_front()
-
-    void push_undo():
-      if STATE.disable_history:
-        return
-
-      dirty_rect := self.vfb->dirty_area
-      debug "ADDING TO UNDO STACK, DIRTY AREA IS", \
-        dirty_rect.x0, dirty_rect.y0, dirty_rect.x1, dirty_rect.y1
-      remarkable_color* fbcopy = (remarkable_color*) malloc(self.byte_size)
-      memcpy(fbcopy, vfb->fbmem, self.byte_size)
-
-      ui::TaskQueue::add_task([=]() {
-        snapshot := make_shared<framebuffer::Snapshot>(w, h)
-        snapshot->compress(fbcopy, self.byte_size)
-        free(fbcopy)
-
-
-        self.undo_stack.push_back(snapshot)
-        self.redo_stack.clear()
-
-        trim_stacks()
-      })
-
-
+    // {{{ UNDO / REDO
     void undo():
-      if self.undo_stack.size() > 1:
-        // put last fb from undo stack into fb
-        self.redo_stack.push_back(self.undo_stack.back())
-        self.undo_stack.pop_back()
-        undofb := self.undo_stack.back()
-        undofb.get()->decompress(self.fb->fbmem)
-        undofb.get()->decompress(vfb->fbmem)
-        ui::MainLoop::full_refresh()
-
+      self.layers[cur_layer].undo()
+      mark_redraw()
     void redo():
-      if self.redo_stack.size() > 0:
-        redofb := self.redo_stack.back()
-        self.redo_stack.pop_back()
-        redofb.get()->decompress(self.fb->fbmem)
-        redofb.get()->decompress(vfb->fbmem)
-        self.undo_stack.push_back(redofb)
-        ui::MainLoop::full_refresh()
+      self.layers[cur_layer].redo()
+      mark_redraw()
     // }}}
 
     // {{{ LAYER STUFF
@@ -238,14 +250,18 @@ namespace app_ui:
       int layer_id = layers.size()
       char filename[PATH_MAX]
       sprintf(filename, "%s/layer.%i.%i.raw", SAVE_DIR, layer_id, self.page_idx)
-      Layer layer = %{
+      Layer layer(
+        w, h,
         make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height),
-        true }
+        self.byte_size,
+        true)
       layer.fb->dirty_area = {0, 0, self.fb->width, self.fb->height}
-      if clear_layer:
-        self.clear_layer(layer_id)
 
       self.layers.push_back(layer)
+
+      if clear_layer:
+        self.clear_layer(layer_id)
+      self.layers[layer_id].push_undo()
       debug "CREATED LAYER", layer_id
 
       return layer_id
@@ -326,8 +342,6 @@ namespace app_ui:
       for int l = 0; l < layers.size(); l++:
         if not layers[l].visible:
           continue
-
-        debug "RENDERING LAYER", l, layers[l].visible
 
         layer := layers[l].fb
         for int i = dr.y0; i < dr.y1; i++:

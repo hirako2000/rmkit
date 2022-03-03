@@ -16,6 +16,7 @@ namespace app_ui:
     bool visible = true
     int byte_size = 0
     int w, h
+    int id
     shared_ptr<framebuffer::FileFB> fb
     deque<shared_ptr<framebuffer::Snapshot>> undo_stack;
     deque<shared_ptr<framebuffer::Snapshot>> redo_stack;
@@ -26,6 +27,12 @@ namespace app_ui:
       fb = _fb
       byte_size = _byte_size
       visible = _visible
+      id = rand() % 10000007
+
+    string name():
+      char repr[100]
+      sprintf(repr, "%X", id)
+      return repr
 
     // {{{ UNDO / REDO STUFF
     void trim_stacks():
@@ -201,6 +208,9 @@ namespace app_ui:
     string save_png():
       return self.vfb->save_lodepng()
 
+    string save_layer():
+      return self.layers[cur_layer].fb->save_lodepng()
+
     void load_from_png(string filename):
       self.select_layer(self.new_layer(true))
       self.layers[cur_layer].fb->load_from_png(filename)
@@ -284,13 +294,10 @@ namespace app_ui:
     bool is_layer_visible(int i):
       return layers[i].visible
 
-    void swap_layer():
-      cur_layer++
-      cur_layer %= layers.size()
-      curr_brush->set_framebuffer(self.layers[cur_layer].fb.get())
-      mark_redraw()
-
     void select_layer(int i):
+      if i < 0 or i >= layers.size():
+        debug "CANT SELECT LAYER:", i
+        return
       cur_layer = i
       if curr_brush != NULL:
         curr_brush->set_framebuffer(self.layers[cur_layer].fb.get())
@@ -301,10 +308,12 @@ namespace app_ui:
         debug "LAYER INDEX IS OUT OF BOUND, CAN'T SWAP:", a, b
         return
 
-      framebuffer::VirtualFB tmp(layers[a].fb->width, layers[a].fb->height)
-      memcpy(tmp.fbmem, layers[a].fb->fbmem, self.byte_size)
-      memcpy(layers[a].fb->fbmem, layers[b].fb->fbmem, self.byte_size)
-      memcpy(layers[b].fb->fbmem, tmp.fbmem, self.byte_size)
+      int mx = max(a, b)
+      int mn = min(a, b)
+
+      swapped := layers[mx]
+      layers.erase(layers.begin() + mx)
+      layers.insert(layers.begin() + mn, swapped)
 
       mark_redraw()
 

@@ -250,27 +250,62 @@ namespace app_ui:
       self.dirty = 1
       self.canvas->redo()
 
+  string layer_name(Canvas *c, int i, bool add_hash=true):
+    if add_hash:
+      return "Layer " + to_string(i) + " " + c->layers[i].name()
+    return "Layer " + to_string(i)
+
+
+  int get_layer(string name):
+    tokens := str_utils::split(name, ' ')
+    return atoi(tokens[1].c_str())
+
   class LayerDialog: public ui::Pager:
     public:
     Canvas *canvas
+    SaveDialog *sd
+    ui::HorizontalLayout *button_bar
 
     LayerDialog(int x, y, w, h, Canvas* c): ui::Pager(x, y, w, h, self):
       self.set_title("")
       self.canvas = c
       self.opt_h = 55
       self.page_size = (self.h - 100) / self.opt_h
-      self.buttons = {"New Layer"}
-
 
     void on_row_selected(string name):
       debug "ROW SELECTED", name
       canvas->select_layer(get_layer(name))
-      ui::MainLoop::hide_overlay()
 
     void populate_and_show():
       self.populate()
       self.setup_for_render()
       self.show()
+      self.setup_buttons()
+
+    ui::DialogButton* make_button(string text, int size=0):
+      if size == 0:
+        image := stbtext::get_text_size(text, ui::Style::DEFAULT.font_size)
+        return new ui::DialogButton(20, 0, image.w + ui::Style::DEFAULT.font_size, 50, self, text)
+      return new ui::DialogButton(20, 0, size + ui::Style::DEFAULT.font_size, 50, self, text)
+
+    void add_buttons(ui::HorizontalLayout *bar):
+      button_bar = new ui::HorizontalLayout(bar->x, bar->y, bar->w, bar->h, bar->scene)
+      setup_buttons()
+
+    void setup_buttons():
+      button_bar->start = 0
+      button_bar->end = button_bar->w
+
+      button_bar->pack_start(make_button("New Layer"))
+      button_bar->pack_end(make_button("Delete"), 10)
+      button_bar->pack_end(make_button("Export"))
+      button_bar->pack_end(make_button("v", 50))
+      button_bar->pack_end(make_button("^", 50))
+
+      if canvas->is_layer_visible(canvas->cur_layer):
+        button_bar->pack_end(make_button("Hide"))
+      else:
+        button_bar->pack_end(make_button("Show"))
 
     void on_button_selected(string name):
       debug "Button Selected:", name
@@ -281,23 +316,40 @@ namespace app_ui:
         debug "Adding New Layer"
         canvas->new_layer()
         self.populate_and_show()
+      else if name == "Export":
+        debug "EXPORTING LAYER"
+        filename := canvas->save_layer()
+        if self.sd == NULL:
+          self.sd = new SaveDialog(0, 0, DIALOG_WIDTH*2, DIALOG_HEIGHT)
+          self.sd->on_hide += PLS_LAMBDA(auto ev):
+            self.populate_and_show()
+          ;
+        title := "Saved as " + filename
+        self.sd->set_title(title)
+        self.sd->show()
+        return
+      else if name == "Delete":
+        layer_id := canvas->cur_layer
+        canvas->delete_layer(layer_id)
+        canvas->select_layer(0)
+        canvas->select_layer(layer_id-1)
+      else if name == "^":
+        canvas->swap_layers(canvas->cur_layer, canvas->cur_layer+1)
+        canvas->select_layer(canvas->cur_layer+1)
+        pass
+      else if name == "v":
+        canvas->swap_layers(canvas->cur_layer, canvas->cur_layer-1)
+        canvas->select_layer(canvas->cur_layer-1)
+      else if name == "Hide" or name == "Show":
+        canvas->toggle_layer(canvas->cur_layer)
 
+      self.populate_and_show()
 
-    string layer_name(int i):
-      return "Layer " + to_string(i)
-
-    int get_layer(string name):
-      tokens := str_utils::split(name, ' ')
-      return atoi(tokens[1].c_str())
 
     void populate():
       self.options.clear()
       for int i = canvas->layers.size()-1; i >= 0; i--:
-        options.push_back(layer_name(i))
-
-    void add_buttons(ui::HorizontalLayout *button_bar):
-      // Skip the pager buttons
-      ui::Dialog::add_buttons(button_bar)
+        options.push_back(layer_name(canvas, i))
 
     string visible_icon(int i):
       return canvas->is_layer_visible(i) ? "V" : "H"
@@ -308,50 +360,17 @@ namespace app_ui:
       bw := 150
       offset := 0
 
-      debug "RENDERING ROW", option
       style := ui::Stylesheet().justify_left().valign_middle()
-
-      // make a button for each of the following: toggle visible,
-      // delete, merge down, clear
-      visible_button := new ui::Button(0, 0, 50, self.opt_h, visible_icon(layer_id))
-      visible_button->mouse.click += PLS_LAMBDA(auto &ev):
-        debug "Visible Button Clicked"
-        canvas->toggle_layer(layer_id)
-        visible_button->text = visible_icon(layer_id)
-      ;
-      offset += 50
-      visible_button->set_style(style.justify_center())
-
-      delete_button := new ui::Button(0, 0, bw, self.opt_h, "Delete")
-      delete_button->mouse.click += PLS_LAMBDA(auto &ev):
-        debug "Delete Button Clicked"
-        canvas->delete_layer(layer_id)
-        self.populate_and_show()
-      ;
-      offset += bw
-      delete_button->set_style(style.justify_center())
-
-//      merge_button := new ui::Button(0, 0, bw, self.opt_h, "Merge")
-//      merge_button->mouse.click += PLS_LAMBDA(auto &ev):
-//        debug "Merge Button Clicked"
-//      ;
-//      merge_button->set_style(style.justify_center())
-//      offset += bw
-
       // Layer Button
-      d := new ui::DialogButton(0, 0, self.w - (offset + 10), self.opt_h, self, option)
+      d := new ui::DialogButton(0, 0, self.w - 40, self.opt_h, self, option)
       d->x_padding = 10
       d->y_padding = 5
-      if option == layer_name(canvas->cur_layer):
+      if option == layer_name(canvas, canvas->cur_layer):
         d->set_style(style.border_left())
       else:
         d->set_style(style)
 
-
-      row->pack_start(visible_button)
       row->pack_start(d)
-      row->pack_end(delete_button)
-      // row->pack_end(merge_button)
 
   class LayerButton: public ui::TextDropdown:
     public:
@@ -362,15 +381,8 @@ namespace app_ui:
       self.canvas = c
       self.ld = new LayerDialog(0, 0, 800, 600, c)
 
-    string layer_name(int i):
-      return "Layer " + to_string(i)
-
-    int get_layer(string name):
-      tokens := str_utils::split(name, ' ')
-      return atoi(tokens[1].c_str())
-
     void before_render():
-      text = layer_name(canvas->cur_layer)
+      text = layer_name(canvas, canvas->cur_layer, false /* hashless */)
       ui::TextDropdown::before_render()
 
       self.sections.clear()
@@ -379,7 +391,7 @@ namespace app_ui:
       ds->add_options({"New Layer"})
       ds->add_options({"..."})
       for i := 0; i < canvas->layers.size(); i++:
-        ds->add_options({layer_name(i)})
+        ds->add_options({layer_name(canvas, i, false /* hashless */)})
       ds->add_options({"..."})
 
       ds->add_options({"Settings"})

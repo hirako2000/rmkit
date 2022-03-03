@@ -279,7 +279,7 @@ namespace app_ui:
 
       if name == "New Layer":
         debug "Adding New Layer"
-        canvas->new_layer(true)
+        canvas->new_layer()
         self.populate_and_show()
 
 
@@ -353,28 +353,55 @@ namespace app_ui:
       row->pack_end(delete_button)
       // row->pack_end(merge_button)
 
-  class LayerButton: public ui::Button:
+  class LayerButton: public ui::TextDropdown:
     public:
     Canvas *canvas
     LayerDialog *ld
 
-    LayerButton(int x, y, w, h, Canvas *c): ui::Button(x,y,w,h,"...")
+    LayerButton(int x, y, w, h, Canvas *c): ui::TextDropdown(x,y,w,h,"...")
       self.canvas = c
       self.ld = new LayerDialog(0, 0, 800, 600, c)
 
-    void on_mouse_click(input::SynMotionEvent &ev):
-      self.ld->populate_and_show()
+    string layer_name(int i):
+      return "Layer " + to_string(i)
+
+    int get_layer(string name):
+      tokens := str_utils::split(name, ' ')
+      return atoi(tokens[1].c_str())
 
     void before_render():
-      if canvas->layers[canvas->cur_layer].visible:
-      text = "Layer " + to_string(canvas->cur_layer)
-      ui::Button::before_render()
+      text = layer_name(canvas->cur_layer)
+      ui::TextDropdown::before_render()
+
+      self.sections.clear()
+      ds := self.add_section("")
+
+      ds->add_options({"New Layer"})
+      ds->add_options({"..."})
+      for i := 0; i < canvas->layers.size(); i++:
+        ds->add_options({layer_name(i)})
+      ds->add_options({"..."})
+
+      ds->add_options({"Settings"})
+
+      self.scene = NULL
 
     void render():
-      ui::Button::render()
+      ui::TextDropdown::render()
       if !canvas->layers[canvas->cur_layer].visible:
         fb->draw_line(x, y, x+w, y+h, 4, BLACK)
 
+    void on_select(int idx):
+      name := self.options[idx]->name
+      if name == "New Layer":
+        self.canvas->select_layer(self.canvas->new_layer())
+      else if name == "Settings":
+        self.ld->populate_and_show()
+      else if name == "...":
+        pass
+      else:
+        layer_id := get_layer(name)
+        canvas->select_layer(layer_id)
 
   class HideButton: public ui::Button:
     public:

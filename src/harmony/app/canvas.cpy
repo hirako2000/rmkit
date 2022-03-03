@@ -210,7 +210,7 @@ namespace app_ui:
 
     string save_layer():
       sfb := framebuffer::VirtualFB(self.w, self.h)
-      layer := layers[cur_layer]
+      &layer := layers[cur_layer]
 
       // set base of sfb to white
       remarkable_color c
@@ -228,6 +228,12 @@ namespace app_ui:
     void load_from_png(string filename):
       self.select_layer(self.new_layer(true))
       self.layers[cur_layer].fb->load_from_png(filename)
+      &layer := self.layers[cur_layer]
+      for int i = 0; i < self.h; i++:
+        for int j = 0; j < self.w; j++:
+          if layer.fb->_get_pixel(j, i) == WHITE:
+            layer.fb->_set_pixel(j, i, TRANSPARENT)
+
       mark_redraw()
 
     void load_vfb():
@@ -366,7 +372,7 @@ namespace app_ui:
         if not layers[l].visible:
           continue
 
-        layer := layers[l].fb
+        &layer := layers[l].fb
         for int i = dr.y0; i < dr.y1; i++:
           for int j = dr.x0; j < dr.x1; j++:
             c = layer->_get_pixel(j, i)

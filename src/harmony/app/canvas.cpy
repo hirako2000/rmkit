@@ -209,7 +209,21 @@ namespace app_ui:
       return self.vfb->save_lodepng()
 
     string save_layer():
-      return self.layers[cur_layer].fb->save_lodepng()
+      sfb := framebuffer::VirtualFB(self.w, self.h)
+      layer := layers[cur_layer]
+
+      // set base of sfb to white
+      remarkable_color c
+      remarkable_color tr = TRANSPARENT
+      for int i = 0; i < self.h; i++:
+        for int j = 0; j < self.w; j++:
+          c = layer.fb->_get_pixel(j, i)
+          if c != tr:
+            sfb._set_pixel(j, i, c)
+          else
+            sfb._set_pixel(j, i, WHITE)
+
+      return sfb.save_lodepng()
 
     void load_from_png(string filename):
       self.select_layer(self.new_layer(true))

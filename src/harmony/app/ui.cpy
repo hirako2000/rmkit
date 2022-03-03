@@ -148,8 +148,10 @@ namespace app_ui:
 
     AboutDialog *ad = NULL
     ExitDialog *ed = NULL
-    SaveDialog *sd = NULL
-    LoadDialog *ld = NULL
+    ExportDialog *exd = NULL
+    ImportDialog *id = NULL
+    SaveProjectDialog *sd = NULL
+    LoadProjectDialog *ld = NULL
 
     ManageButton(int x, y, w, h, Canvas *c): TextDropdown(x,y,w,h,"...")
       self.canvas = c
@@ -173,17 +175,27 @@ namespace app_ui:
         self.select_exit()
       if option == EXPORT:
         filename := self.canvas->save_png()
-        if self.sd == NULL:
-          self.sd = new SaveDialog(0, 0, DIALOG_WIDTH*2, DIALOG_HEIGHT)
+        if self.exd == NULL:
+          self.exd = new ExportDialog(0, 0, DIALOG_WIDTH*2, DIALOG_HEIGHT)
         title := "Saved as " + filename
-        self.sd->set_title(title)
-        self.sd->show()
+        self.exd->set_title(title)
+        self.exd->show()
       if option == IMPORT:
+        if self.id == NULL:
+          self.id = new ImportDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, self.canvas)
+        self.id->populate()
+        self.id->setup_for_render()
+        self.id->show()
+      if option == LOAD:
         if self.ld == NULL:
-          self.ld = new LoadDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, self.canvas)
+          self.ld = new LoadProjectDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, self.canvas)
         self.ld->populate()
         self.ld->setup_for_render()
         self.ld->show()
+      if option == SAVE:
+        if self.sd == NULL:
+          self.sd = new SaveProjectDialog(0, 0, DIALOG_WIDTH, DIALOG_HEIGHT, self.canvas)
+        self.sd->show()
 
       self.text = "..."
 
@@ -263,7 +275,7 @@ namespace app_ui:
   class LayerDialog: public ui::Pager:
     public:
     Canvas *canvas
-    SaveDialog *sd
+    ExportDialog *sd
     ui::HorizontalLayout *button_bar
 
     LayerDialog(int x, y, w, h, Canvas* c): ui::Pager(x, y, w, h, self):
@@ -320,7 +332,7 @@ namespace app_ui:
         debug "EXPORTING LAYER"
         filename := canvas->save_layer()
         if self.sd == NULL:
-          self.sd = new SaveDialog(0, 0, DIALOG_WIDTH*2, DIALOG_HEIGHT)
+          self.sd = new ExportDialog(0, 0, DIALOG_WIDTH*2, DIALOG_HEIGHT)
           self.sd->on_hide += PLS_LAMBDA(auto ev):
             self.populate_and_show()
           ;
@@ -359,10 +371,23 @@ namespace app_ui:
       layer_id := get_layer(option)
       bw := 150
       offset := 0
-
       style := ui::Stylesheet().justify_left().valign_middle()
+
+
+      // make a button for each of the following: toggle visible,
+      // delete, merge down, clear
+      visible_button := new ui::Button(0, 0, 50, self.opt_h, visible_icon(layer_id))
+      visible_button->mouse.click += PLS_LAMBDA(auto &ev):
+        debug "Visible Button Clicked"
+        canvas->toggle_layer(layer_id)
+        visible_button->text = visible_icon(layer_id)
+      ;
+      offset += 50
+      visible_button->set_style(style.justify_center())
+
+      // row->pack_end(merge_button)
       // Layer Button
-      d := new ui::DialogButton(0, 0, self.w - 40, self.opt_h, self, option)
+      d := new ui::DialogButton(0, 0, self.w - 40 - offset, self.opt_h, self, option)
       d->x_padding = 10
       d->y_padding = 5
       if option == layer_name(canvas, canvas->cur_layer):
@@ -370,6 +395,7 @@ namespace app_ui:
       else:
         d->set_style(style)
 
+      row->pack_start(visible_button)
       row->pack_start(d)
 
   class LayerButton: public ui::TextDropdown:

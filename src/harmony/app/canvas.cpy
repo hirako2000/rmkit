@@ -2,6 +2,9 @@
 #include "brush.h"
 #include "../../shared/snapshot.h"
 
+#include <sys/types.h>
+#include <sys/wait.h>
+
 #ifdef REMARKABLE
 #define UNDO_STACK_SIZE 10
 #else
@@ -89,6 +92,7 @@ namespace app_ui:
     int stroke_width = 1
     remarkable_color stroke_color = BLACK
     int page_idx = 0
+    string project_name = "Untitled"
 
     bool erasing = false
     bool full_redraw = false
@@ -253,6 +257,56 @@ namespace app_ui:
 
       mark_redraw()
       ui::MainLoop::refresh()
+
+    void run_command(string cmd, vector<string> args):
+      char *c_args[args.size()+2]
+      c_args[0] = (char*) cmd.c_str()
+      for i := 0; i < args.size(); i++:
+        c_args[i+1] = (char*) args[i].c_str()
+
+      c_args[args.size()+1] = NULL
+
+      pid := fork()
+      if pid == 0:
+        wait(NULL)
+      else if pid == -1:
+        debug "ERR", strerror(errno)
+      else:
+        if execvp(cmd.c_str(), c_args) == -1:
+          debug "ERR", strerror(errno)
+
+    void load_project(string filename):
+      out_dir := string(SAVE_DIR) + "/" + "current"
+      run_command("rm", {"-rf", out_dir})
+      run_command("mkdir", {out_dir})
+      run_command("unzip", {filename, "-d", out_dir})
+
+      vector<string> filenames = util::lsdir(out_dir, ".raw")
+      self.layers.clear()
+      for auto f : filenames:
+        Layer layer(
+          self.w, self.h,
+          make_shared<framebuffer::FileFB>(string(out_dir) + "/" + f,
+            self.fb->width, self.fb->height),
+          self.byte_size,
+          true)
+        layer.fb->dirty_area = {0, 0, self.fb->width, self.fb->height}
+
+        self.layers.push_back(layer)
+
+      self.mark_redraw()
+
+    // we tack on ".hrm" to the filename
+    void save_project(string filename):
+      if filename == "" or filename[0] == '.':
+        return
+      out_file := string(SAVE_DIR) + "/" + filename + ".hrm"
+
+      vector<string> args = {"-r", "-j", out_file }
+      for auto layer : self.layers:
+        args.push_back(layer.fb->filename)
+
+      run_command("zip", args)
 
     int MAX_PAGES = 10
     void next_page():

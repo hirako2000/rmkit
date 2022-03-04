@@ -1,4 +1,3 @@
-#include <dirent.h>
 #include <algorithm>
 
 string ABOUT_TEXT = "\
@@ -39,12 +38,20 @@ namespace app_ui:
         self.set_title("Save project as")
         style := ui::Stylesheet().justify_left().valign_middle()
         self.projectInput = \
-          new ui::TextInput(20, 20, self.w - 40, 50, "Untitled")
+          new ui::TextInput(20, 20, self.w - 40, 50, "")
         self.projectInput->set_style(style)
         self.contentWidget = self.projectInput
 
+      void before_render():
+        self.projectInput->text = canvas->project_name
+        ui::ConfirmationDialog::before_render()
+
+
       void on_button_selected(string t):
-        debug "BUTTON SELECTED", t, self.projectInput->text
+        debug t, "Saving Project", self.projectInput->text
+        if t == "OK":
+          canvas->save_project(self.projectInput->text)
+
         ui::MainLoop::hide_overlay()
 
 
@@ -61,18 +68,7 @@ namespace app_ui:
         self.page_size = self.h / self.opt_h - 1
 
       void populate():
-        DIR *dir
-        struct dirent *ent
-
-        vector<string> filenames
-        if ((dir = opendir (SAVE_DIR)) != NULL):
-          while ((ent = readdir (dir)) != NULL):
-            str_d_name := string(ent->d_name)
-            if str_d_name != "." and str_d_name != ".." and ends_with(str_d_name, "png"):
-              filenames.push_back(str_d_name)
-          closedir (dir)
-        else:
-          perror ("")
+        filenames := util::lsdir(SAVE_DIR, ".png")
         sort(filenames.begin(),filenames.end())
         self.options = filenames
 
@@ -92,26 +88,18 @@ namespace app_ui:
 
   class LoadProjectDialog: public ui::Pager:
     public:
+      Canvas *canvas
       LoadProjectDialog(int x, y, w, h, Canvas *c): ui::Pager(x, y, w, h, self):
+        canvas = c
         self.set_title("Load Project")
 
       void on_row_selected(string name):
-        // self.canvas->load_project(name)
-        debug "LOADING PROJECT"
+        debug "LOADING PROJECT", name
+        canvas->load_project(string(SAVE_DIR) + "/" + name)
+        ui::MainLoop::hide_overlay()
 
       void populate():
-        DIR *dir
-        struct dirent *ent
-
-        vector<string> filenames
-        if ((dir = opendir (SAVE_DIR)) != NULL):
-          while ((ent = readdir (dir)) != NULL):
-            str_d_name := string(ent->d_name)
-            if str_d_name != "." and str_d_name != ".." and ends_with(str_d_name, "hrm"):
-              filenames.push_back(str_d_name)
-          closedir (dir)
-        else:
-          perror ("")
+        vector<string> filenames = util::lsdir(SAVE_DIR, ".hrm")
         sort(filenames.begin(),filenames.end())
         self.options = filenames
 

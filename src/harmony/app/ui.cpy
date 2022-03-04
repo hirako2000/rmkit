@@ -256,7 +256,7 @@ namespace app_ui:
 
   string layer_name(Canvas *c, int i, bool add_hash=true):
     if add_hash:
-      return "Layer " + to_string(i) + " " + c->layers[i].name()
+      return "Layer " + to_string(i) + " " + c->layers[i].get_name()
     return "Layer " + to_string(i)
 
 
@@ -391,6 +391,20 @@ namespace app_ui:
       offset += 50
       visible_button->set_style(style.justify_center())
 
+      rename_button := new ui::Button(0, 0, 100, self.opt_h, "Rename")
+      rename_button->mouse.click += PLS_LAMBDA(auto &ev):
+        keyboard := new ui::Keyboard()
+        keyboard->set_text(canvas->layers[canvas->cur_layer].get_name())
+        keyboard->show()
+
+        keyboard->events.done += PLS_LAMBDA(auto &ev):
+          canvas->layers[canvas->cur_layer].set_name(ev.text)
+          self.populate_and_show()
+        ;
+      ;
+      offset += 100
+      rename_button->set_style(style.justify_center())
+
       // row->pack_end(merge_button)
       // Layer Button
       d := new ui::DialogButton(0, 0, self.w - 40 - offset, self.opt_h, self, option)
@@ -403,6 +417,7 @@ namespace app_ui:
 
       row->pack_start(visible_button)
       row->pack_start(d)
+      row->pack_end(rename_button, 10)
 
   class LayerButton: public ui::TextDropdown:
     public:

@@ -19,7 +19,7 @@ namespace app_ui:
     bool visible = true
     int byte_size = 0
     int w, h
-    int id
+    string name = ""
     shared_ptr<framebuffer::FileFB> fb
     deque<shared_ptr<framebuffer::Snapshot>> undo_stack;
     deque<shared_ptr<framebuffer::Snapshot>> redo_stack;
@@ -30,12 +30,15 @@ namespace app_ui:
       fb = _fb
       byte_size = _byte_size
       visible = _visible
-      id = rand() % 10000007
-
-    string name():
       char repr[100]
-      sprintf(repr, "%X", id)
-      return repr
+      sprintf(repr, "%X", this)
+      name = repr
+
+    string get_name():
+      return name
+
+    void set_name(string n):
+      name = n
 
     // {{{ UNDO / REDO STUFF
     void trim_stacks():

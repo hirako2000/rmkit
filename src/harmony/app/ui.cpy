@@ -149,7 +149,6 @@ namespace app_ui:
     AboutDialog *ad = NULL
     ExitDialog *ed = NULL
     ExportDialog *exd = NULL
-    ImportDialog *id = NULL
     SaveProjectDialog *sd = NULL
     LoadProjectDialog *ld = NULL
 
@@ -180,12 +179,6 @@ namespace app_ui:
         title := "Saved as " + filename
         self.exd->set_title(title)
         self.exd->show()
-      if option == IMPORT:
-        if self.id == NULL:
-          self.id = new ImportDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, self.canvas)
-        self.id->populate()
-        self.id->setup_for_render()
-        self.id->show()
       if option == LOAD:
         if self.ld == NULL:
           self.ld = new LoadProjectDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, self.canvas)
@@ -276,6 +269,7 @@ namespace app_ui:
     public:
     Canvas *canvas
     ExportDialog *sd
+    ImportDialog *id = NULL
     ui::HorizontalLayout *button_bar
 
     LayerDialog(int x, y, w, h, Canvas* c): ui::Pager(x, y, w, h, self):
@@ -309,6 +303,7 @@ namespace app_ui:
       button_bar->end = button_bar->w
 
       button_bar->pack_start(make_button("New Layer"))
+      button_bar->pack_start(make_button("Import"))
       button_bar->pack_end(make_button("Delete"), 10)
       button_bar->pack_end(make_button("Export"))
       button_bar->pack_end(make_button("v", 50))
@@ -339,6 +334,18 @@ namespace app_ui:
         title := "Saved as " + filename
         self.sd->set_title(title)
         self.sd->show()
+        return
+      else if name == "Import":
+        debug "IMPORTING LAYER"
+        if self.id == NULL:
+          self.id = new ImportDialog(0, 0, DIALOG_WIDTH, LOAD_DIALOG_HEIGHT, canvas)
+          self.id->on_hide += PLS_LAMBDA(auto ev):
+            self.populate_and_show()
+          ;
+
+        self.id->populate()
+        self.id->setup_for_render()
+        self.id->show()
         return
       else if name == "Delete":
         layer_id := canvas->cur_layer

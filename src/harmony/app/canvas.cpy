@@ -268,18 +268,18 @@ namespace app_ui:
 
       pid := fork()
       if pid == 0:
-        wait(NULL)
+        if execvp(cmd.c_str(), c_args) == -1:
+          debug "ERR", strerror(errno)
       else if pid == -1:
         debug "ERR", strerror(errno)
       else:
-        if execvp(cmd.c_str(), c_args) == -1:
-          debug "ERR", strerror(errno)
+        wait(NULL)
 
     void load_project(string filename):
       out_dir := string(SAVE_DIR) + "/" + "current"
       run_command("rm", {"-rf", out_dir})
       run_command("mkdir", {out_dir})
-      run_command("unzip", {filename, "-d", out_dir})
+      run_command("tar", {"-xvzf", filename, "-C", out_dir})
 
       vector<string> filenames = util::lsdir(out_dir, ".raw")
       self.layers.clear()
@@ -300,13 +300,29 @@ namespace app_ui:
     void save_project(string filename):
       if filename == "" or filename[0] == '.':
         return
-      out_file := string(SAVE_DIR) + "/" + filename + ".hrm"
 
-      vector<string> args = {"-r", "-j", out_file }
+      out_file := filename + ".hrm"
+      out_dir := string(SAVE_DIR) + "/" + filename
+      debug "OUT DIR IS", out_dir
+
+      run_command("mkdir", { out_dir })
       for auto layer : self.layers:
-        args.push_back(layer.fb->filename)
+        run_command("cp", { layer.fb->filename, out_dir })
 
-      run_command("zip", args)
+      char curdir[PATH_MAX]
+      getcwd(curdir, PATH_MAX)
+      if chdir(out_dir.c_str()) == -1:
+        debug "ERR CHANGING DIRECTORIES", strerror(errno), out_dir
+        return
+      filenames := util::lsdir(".", ".raw")
+      tar_args := vector<string>{"-cvzf", out_file}
+      for i := 0; i < filenames.size(); i++:
+        tar_args.push_back(filenames[i].c_str())
+
+      run_command("tar", tar_args)
+      run_command("mv", {out_file, "../"})
+      chdir(curdir)
+      run_command("rm", {out_dir, "-rf"})
 
     int MAX_PAGES = 10
     void next_page():

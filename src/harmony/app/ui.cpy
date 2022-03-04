@@ -140,8 +140,7 @@ namespace app_ui:
           QUIT  = "exit",\
           SAVE  = "save",\
           LOAD  = "load",\
-          EXPORT = "export",\
-          IMPORT = "import"
+          EXPORT = "export"
   class ManageButton: public ui::TextDropdown:
     public:
     Canvas *canvas
@@ -155,7 +154,7 @@ namespace app_ui:
     ManageButton(int x, y, w, h, Canvas *c): TextDropdown(x,y,w,h,"...")
       self.canvas = c
       ds := self.add_section("")
-      ds->add_options({QUIT, DOTS, CLEAR, SAVE, LOAD, DOTS, EXPORT, IMPORT, DOTS, ABOUT})
+      ds->add_options({QUIT, DOTS, CLEAR, SAVE, LOAD, EXPORT, DOTS, ABOUT})
       self.text = "..."
 
     void select_exit():

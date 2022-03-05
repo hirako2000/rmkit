@@ -235,7 +235,12 @@ namespace app_ui:
           else
             sfb._set_pixel(j, i, WHITE)
 
-      return sfb.save_lodepng()
+      char filename[100]
+      datestr := self.vfb->get_date()
+      datecstr := datestr.c_str()
+      sprintf(filename, "%s/%s-%s%s", SAVE_DIR,
+        layer.name, datecstr, ".png")
+      return sfb.save_lodepng(filename, 0, 0, self.w, self.h)
 
     void load_from_png(string filename):
       self.select_layer(self.new_layer(true))

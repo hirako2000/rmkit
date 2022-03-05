@@ -136,7 +136,7 @@ namespace app_ui:
 
   string  ABOUT = "about",\
           CLEAR = "new",\
-          DOTS  = "...",\
+          DOTS  = "---",\
           QUIT  = "exit",\
           SAVE  = "save",\
           LOAD  = "load",\
@@ -426,10 +426,10 @@ namespace app_ui:
       ds := self.add_section("")
 
       ds->add_options({"New Layer"})
-      ds->add_options({"..."})
+      ds->add_options({"---"})
       for i := 0; i < canvas->layers.size(); i++:
         ds->add_options({canvas->layers[i].name})
-      ds->add_options({"..."})
+      ds->add_options({"---"})
 
       ds->add_options({"Settings"})
 
@@ -446,7 +446,7 @@ namespace app_ui:
         self.canvas->select_layer(self.canvas->new_layer())
       else if name == "Settings":
         self.ld->populate_and_show()
-      else if name == "...":
+      else if name == "..." or name == "---":
         pass
       else:
         canvas->select_layer(name)

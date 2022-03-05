@@ -12,6 +12,7 @@
 #endif
 
 
+#define LAYER_DIR SAVE_DIR "/current"
 namespace app_ui:
 
   class Layer:
@@ -288,13 +289,23 @@ namespace app_ui:
       else:
         wait(NULL)
 
-    void load_project(string filename):
-      out_dir := string(SAVE_DIR) + "/" + "current"
-      run_command("rm", {"-rf", out_dir})
-      run_command("mkdir", {out_dir})
-      run_command("tar", {"-xvzf", filename, "-C", out_dir})
+    void reset_layer_dir():
+      run_command("rm", {"-rf", LAYER_DIR})
+      run_command("mkdir", {LAYER_DIR})
 
-      vector<string> filenames = util::lsdir(out_dir, ".raw")
+
+    void load_project(string filename):
+      reset_layer_dir()
+      run_command("tar", {"-xvzf", filename, "-C", LAYER_DIR})
+      load_project_from_dir(LAYER_DIR)
+
+      // set the project name to the filename minus the '.hrm' extension
+      file_tokens := str_utils::split(filename, '/')
+      last_token := file_tokens[file_tokens.size()-1]
+      self.project_name = last_token.substr(0, last_token.length() - 4)
+
+    void load_project_from_dir(string dir):
+      vector<string> filenames = util::lsdir(dir, ".raw")
       sort(filenames.begin(), filenames.end())
 
       self.layers.clear()
@@ -306,7 +317,7 @@ namespace app_ui:
 
         Layer layer(
           self.w, self.h,
-          make_shared<framebuffer::FileFB>(string(out_dir) + "/" + f,
+          make_shared<framebuffer::FileFB>(string(dir) + "/" + f,
             self.fb->width, self.fb->height),
           self.byte_size,
           true)
@@ -317,10 +328,6 @@ namespace app_ui:
 
       self.mark_redraw()
 
-      // set the project name to the filename minus the '.hrm' extension
-      file_tokens := str_utils::split(filename, '/')
-      last_token := file_tokens[file_tokens.size()-1]
-      self.project_name = last_token.substr(0, last_token.length() - 4)
 
     // we tack on ".hrm" to the filename
     void save_project(string filename):
@@ -384,7 +391,7 @@ namespace app_ui:
       int layer_id = layers.size()
       char filename[PATH_MAX]
       layer_name := "Layer " + to_string(layers.size())
-      sprintf(filename, "%s/layer.%i.%s.raw", SAVE_DIR, layer_id, layer_name.c_str())
+      sprintf(filename, "%s/layer.%i.%s.raw", LAYER_DIR, layer_id, layer_name.c_str())
       Layer layer(
         w, h,
         make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height),
@@ -416,7 +423,7 @@ namespace app_ui:
       &layer := self.layers[layer_id]
 
       char filename[PATH_MAX]
-      sprintf(filename, "%s/layer.%i.%s.raw", SAVE_DIR, layer_id, layer_name.c_str())
+      sprintf(filename, "%s/layer.%i.%s.raw", LAYER_DIR, layer_id, layer_name.c_str())
       run_command("mv", { layer.fb->filename, filename})
       layer.fb->filename = filename
       layer.name = layer_name

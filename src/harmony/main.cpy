@@ -93,14 +93,6 @@ class App:
   def handle_key_event(input::SynKeyEvent &key_ev):
     if key_ev.is_pressed:
       switch key_ev.key:
-        #if REMARKABLE
-        case KEY_LEFT:
-          canvas->prev_page()
-          break
-        case KEY_RIGHT:
-          canvas->next_page()
-          break
-        #endif
         case KEY_POWER:
           manage_button->select_exit()
           break

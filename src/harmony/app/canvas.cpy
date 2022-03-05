@@ -2,6 +2,7 @@
 #include "brush.h"
 #include "../../shared/snapshot.h"
 
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -11,6 +12,10 @@
 #define UNDO_STACK_SIZE 100
 #endif
 
+
+bool path_exists(const std::string &s):
+  struct stat buffer;
+  return (stat (s.c_str(), &buffer) == 0);
 
 #define LAYER_DIR SAVE_DIR "/current"
 namespace app_ui:
@@ -104,7 +109,7 @@ namespace app_ui:
     shared_ptr<framebuffer::VirtualFB> vfb
 
     vector<Layer> layers
-    int cur_layer = 1
+    int cur_layer = 0
 
     Brush* curr_brush
     Brush* eraser
@@ -125,6 +130,12 @@ namespace app_ui:
       self.eraser->set_stroke_width(stroke::Size::MEDIUM)
 
       self.set_brush(brush::PENCIL)
+
+      if path_exists(LAYER_DIR):
+        self.load_project_from_dir(LAYER_DIR)
+      else:
+        reset_layer_dir()
+        self.select_layer(self.new_layer())
 
     ~Canvas():
       pass
@@ -147,7 +158,7 @@ namespace app_ui:
       memset(self.fb->fbmem, WHITE, self.byte_size)
       memset(vfb->fbmem, WHITE, self.byte_size)
       self.layers.clear()
-      self.select_layer(self.new_layer(true))
+      self.select_layer(self.new_layer())
 
       self.curr_brush->reset()
       self.layers[cur_layer].push_undo()
@@ -158,7 +169,9 @@ namespace app_ui:
       brush->reset()
       brush->color = self.stroke_color
       brush->set_stroke_width(self.stroke_width)
-      brush->set_framebuffer(self.layers[cur_layer].fb.get())
+
+      if cur_layer < self.layers.size():
+        brush->set_framebuffer(self.layers[cur_layer].fb.get())
 
     bool ignore_event(input::SynMotionEvent &ev):
       return input::is_touch_event(ev) != NULL
@@ -240,11 +253,11 @@ namespace app_ui:
       datestr := self.vfb->get_date()
       datecstr := datestr.c_str()
       sprintf(filename, "%s/%s-%s%s", SAVE_DIR,
-        layer.name, datecstr, ".png")
+        layer.name.c_str(), datecstr, ".png")
       return sfb.save_lodepng(filename, 0, 0, self.w, self.h)
 
     void load_from_png(string filename):
-      self.select_layer(self.new_layer(true))
+      self.select_layer(self.new_layer())
       self.layers[cur_layer].fb->load_from_png(filename)
       &layer := self.layers[cur_layer]
       for int i = 0; i < self.h; i++:
@@ -260,16 +273,10 @@ namespace app_ui:
 
       self.vfb = make_shared<framebuffer::VirtualFB>(self.fb->width, self.fb->height)
       self.vfb->dither = framebuffer::DITHER::BAYER_2
-
-      self.layers.clear()
-      self.select_layer(self.new_layer())
-
-      for auto &layer : layers:
-        framebuffer::reset_dirty(layer.fb->dirty_area)
+      self.vfb->draw_rect(0, 0, self.vfb->width, self.vfb->height, WHITE)
 
       memcpy(fb->fbmem, vfb->fbmem, self.byte_size)
 
-      mark_redraw()
       ui::MainLoop::refresh()
 
     void run_command(string cmd, vector<string> args):
@@ -326,6 +333,7 @@ namespace app_ui:
 
         self.layers.push_back(layer)
 
+      self.select_layer(layers.size() - 1)
       self.mark_redraw()
 
 
@@ -343,7 +351,7 @@ namespace app_ui:
         run_command("cp", { layer.fb->filename, out_dir })
 
       char curdir[PATH_MAX]
-      getcwd(curdir, PATH_MAX)
+      _ := getcwd(curdir, PATH_MAX)
       if chdir(out_dir.c_str()) == -1:
         debug "ERR CHANGING DIRECTORIES", strerror(errno), out_dir
         return
@@ -354,19 +362,9 @@ namespace app_ui:
 
       run_command("tar", tar_args)
       run_command("mv", {out_file, "../"})
-      chdir(curdir)
+      __ := chdir(curdir)
       run_command("rm", {out_dir, "-rf"})
 
-    int MAX_PAGES = 10
-    void next_page():
-      if self.page_idx < MAX_PAGES:
-        self.page_idx++;
-        self.load_vfb()
-
-    void prev_page():
-      if self.page_idx > 0:
-        self.page_idx--
-        self.load_vfb()
     // }}}
 
     // {{{ UNDO / REDO
@@ -387,7 +385,7 @@ namespace app_ui:
         idx++
       return -1
 
-    int new_layer(bool clear_layer=false):
+    int new_layer():
       int layer_id = layers.size()
       char filename[PATH_MAX]
       layer_name := "Layer " + to_string(layers.size())
@@ -402,8 +400,7 @@ namespace app_ui:
 
       self.layers.push_back(layer)
 
-      if clear_layer:
-        self.clear_layer(layer_id)
+      self.clear_layer(layer_id)
       self.layers[layer_id].push_undo()
       debug "CREATED LAYER", layer_id
 
@@ -411,6 +408,7 @@ namespace app_ui:
 
     void delete_layer(int i):
       self.clear_layer(i)
+      run_command("rm", { self.layers[i].fb->filename})
       if layers.size() > 1:
         layers.erase(layers.begin() + i)
       mark_redraw()

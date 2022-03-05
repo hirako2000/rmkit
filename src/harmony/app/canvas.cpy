@@ -31,7 +31,7 @@ namespace app_ui:
       byte_size = _byte_size
       visible = _visible
       char repr[100]
-      sprintf(repr, "%X", this)
+      sprintf(repr, "%p", this)
       name = repr
 
     string get_name():
@@ -213,7 +213,12 @@ namespace app_ui:
 
     // {{{ SAVING / LOADING
     string save_png():
-      return self.vfb->save_lodepng()
+      char filename[100]
+      datestr := self.vfb->get_date()
+      datecstr := datestr.c_str()
+      sprintf(filename, "%s/%s-%s%s", SAVE_DIR,
+        self.project_name.c_str(), datecstr, ".png")
+      return self.vfb->save_lodepng(filename, 0, 0, w, h)
 
     string save_layer():
       sfb := framebuffer::VirtualFB(self.w, self.h)
@@ -285,8 +290,15 @@ namespace app_ui:
       run_command("tar", {"-xvzf", filename, "-C", out_dir})
 
       vector<string> filenames = util::lsdir(out_dir, ".raw")
+      sort(filenames.begin(), filenames.end())
+
       self.layers.clear()
       for auto f : filenames:
+        tokens := str_utils::split(f, '.')
+        name := "Layer " + to_string(layers.size())
+        if tokens.size() == 4:
+          name = tokens[2]
+
         Layer layer(
           self.w, self.h,
           make_shared<framebuffer::FileFB>(string(out_dir) + "/" + f,
@@ -294,10 +306,16 @@ namespace app_ui:
           self.byte_size,
           true)
         layer.fb->dirty_area = {0, 0, self.fb->width, self.fb->height}
+        layer.name = name
 
         self.layers.push_back(layer)
 
       self.mark_redraw()
+
+      // set the project name to the filename minus the '.hrm' extension
+      file_tokens := str_utils::split(filename, '/')
+      last_token := file_tokens[file_tokens.size()-1]
+      self.project_name = last_token.substr(0, last_token.length() - 4)
 
     // we tack on ".hrm" to the filename
     void save_project(string filename):
@@ -349,16 +367,26 @@ namespace app_ui:
     // }}}
 
     // {{{ LAYER STUFF
+    int get_layer_idx(string name):
+      idx := 0
+      for auto &l: layers:
+        if l.name == name:
+          return idx
+        idx++
+      return -1
+
     int new_layer(bool clear_layer=false):
       int layer_id = layers.size()
       char filename[PATH_MAX]
-      sprintf(filename, "%s/layer.%i.%i.raw", SAVE_DIR, layer_id, self.page_idx)
+      layer_name := "Layer " + to_string(layers.size())
+      sprintf(filename, "%s/layer.%i.%s.raw", SAVE_DIR, layer_id, layer_name.c_str())
       Layer layer(
         w, h,
         make_shared<framebuffer::FileFB>(filename, self.fb->width, self.fb->height),
         self.byte_size,
         true)
       layer.fb->dirty_area = {0, 0, self.fb->width, self.fb->height}
+      layer.name = layer_name
 
       self.layers.push_back(layer)
 
@@ -379,6 +407,15 @@ namespace app_ui:
       layers[i].fb->draw_rect(0, 0, layers[i].fb->width, layers[i].fb->height, TRANSPARENT)
       mark_redraw()
 
+    void rename_layer(int layer_id, string layer_name):
+      &layer := self.layers[layer_id]
+
+      char filename[PATH_MAX]
+      sprintf(filename, "%s/layer.%i.%s.raw", SAVE_DIR, layer_id, layer_name.c_str())
+      run_command("mv", { layer.fb->filename, filename})
+      layer.fb->filename = filename
+      layer.name = layer_name
+
     void toggle_layer(int i):
       layers[i].visible = !layers[i].visible
       layers[i].fb->dirty_area = {0, 0, layers[i].fb->width, layers[i].fb->height}
@@ -386,6 +423,9 @@ namespace app_ui:
 
     bool is_layer_visible(int i):
       return layers[i].visible
+
+    void select_layer(string name):
+      select_layer(get_layer_idx(name))
 
     void select_layer(int i):
       if i < 0 or i >= layers.size():

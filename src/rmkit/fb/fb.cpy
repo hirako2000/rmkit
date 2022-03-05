@@ -753,6 +753,7 @@ namespace framebuffer:
 
     virtual ~FileFB():
       msync(self.fbmem, self.byte_size, MS_ASYNC)
+      munmap(self.fbmem, self.byte_size)
 
     virtual tuple<int,int> get_virtual_size():
       return self.width, self.height
@@ -776,6 +777,11 @@ namespace framebuffer:
 
     virtual tuple<int,int> get_virtual_size():
       return self.width, self.height
+
+    ~VirtualFB():
+      if self.fbmem != NULL:
+        free(self.fbmem)
+      self.fbmem = NULL
 
   class RemarkableFB: public HardwareFB:
     public:

@@ -254,16 +254,6 @@ namespace app_ui:
       self.dirty = 1
       self.canvas->redo()
 
-  string layer_name(Canvas *c, int i, bool add_hash=true):
-    if add_hash:
-      return "Layer " + to_string(i) + " " + c->layers[i].get_name()
-    return "Layer " + to_string(i)
-
-
-  int get_layer(string name):
-    tokens := str_utils::split(name, ' ')
-    return atoi(tokens[1].c_str())
-
   class LayerDialog: public ui::Pager:
     public:
     Canvas *canvas
@@ -279,7 +269,7 @@ namespace app_ui:
 
     void on_row_selected(string name):
       debug "ROW SELECTED", name
-      canvas->select_layer(get_layer(name))
+      canvas->select_layer(name)
 
     void populate_and_show():
       self.populate()
@@ -367,14 +357,14 @@ namespace app_ui:
     void populate():
       self.options.clear()
       for int i = canvas->layers.size()-1; i >= 0; i--:
-        options.push_back(layer_name(canvas, i))
+        options.push_back(canvas->layers[i].name)
 
     string visible_icon(int i):
       return canvas->is_layer_visible(i) ? "V" : "H"
 
     void render_row(ui::HorizontalLayout *row, string option):
       self.layout->pack_start(row)
-      layer_id := get_layer(option)
+      layer_id := canvas->get_layer_idx(option)
       bw := 150
       offset := 0
       style := ui::Stylesheet().justify_left().valign_middle()
@@ -394,11 +384,11 @@ namespace app_ui:
       rename_button := new ui::Button(0, 0, 100, self.opt_h, "Rename")
       rename_button->mouse.click += PLS_LAMBDA(auto &ev):
         keyboard := new ui::Keyboard()
-        keyboard->set_text(canvas->layers[canvas->cur_layer].get_name())
+        keyboard->set_text(canvas->layers[layer_id].get_name())
         keyboard->show()
 
         keyboard->events.done += PLS_LAMBDA(auto &ev):
-          canvas->layers[canvas->cur_layer].set_name(ev.text)
+          canvas->rename_layer(layer_id, ev.text)
           self.populate_and_show()
         ;
       ;
@@ -410,7 +400,7 @@ namespace app_ui:
       d := new ui::DialogButton(0, 0, self.w - 40 - offset, self.opt_h, self, option)
       d->x_padding = 10
       d->y_padding = 5
-      if option == layer_name(canvas, canvas->cur_layer):
+      if option == canvas->layers[canvas->cur_layer].name
         d->set_style(style.border_left())
       else:
         d->set_style(style)
@@ -429,7 +419,7 @@ namespace app_ui:
       self.ld = new LayerDialog(0, 0, 800, 600, c)
 
     void before_render():
-      text = layer_name(canvas, canvas->cur_layer, false /* hashless */)
+      text = canvas->layers[canvas->cur_layer].name
       ui::TextDropdown::before_render()
 
       self.sections.clear()
@@ -438,7 +428,7 @@ namespace app_ui:
       ds->add_options({"New Layer"})
       ds->add_options({"..."})
       for i := 0; i < canvas->layers.size(); i++:
-        ds->add_options({layer_name(canvas, i, false /* hashless */)})
+        ds->add_options({canvas->layers[i].name})
       ds->add_options({"..."})
 
       ds->add_options({"Settings"})
@@ -459,8 +449,7 @@ namespace app_ui:
       else if name == "...":
         pass
       else:
-        layer_id := get_layer(name)
-        canvas->select_layer(layer_id)
+        canvas->select_layer(name)
 
   class HideButton: public ui::Button:
     public:

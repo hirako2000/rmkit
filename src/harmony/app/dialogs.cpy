@@ -41,20 +41,21 @@ namespace app_ui:
           new ui::TextInput(20, 20, self.w - 40, 50, "")
         self.projectInput->set_style(style)
         self.contentWidget = self.projectInput
+        self.projectInput->events.done += PLS_LAMBDA(string text):
+          self.mark_redraw()
+          canvas->project_name = text
+        ;
 
       void before_render():
         self.projectInput->text = canvas->project_name
         ui::ConfirmationDialog::before_render()
 
-
       void on_button_selected(string t):
-        debug t, "Saving Project", self.projectInput->text
+        debug t, "Saving Project", canvas->project_name
         if t == "OK":
-          canvas->save_project(self.projectInput->text)
+          canvas->save_project(canvas->project_name)
 
         ui::MainLoop::hide_overlay()
-
-
 
   class ImportDialog: public ui::Pager:
     public:

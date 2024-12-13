@@ -16,15 +16,20 @@ using namespace std
 
 extern bool USE_RESIM = true
 
+// #define DEBUG_MOUSE_EVENT
 // #define DEBUG_INPUT_EVENT 1
 namespace input:
   extern int ipc_fd[2] = { -1, -1 };
   extern bool CRASH_ON_BAD_DEVICE = (getenv("RMKIT_CRASH_ON_BAD_DEVICE") != NULL)
 
-  template<class T, class EV>
-  class InputClass:
+  class IInputClass:
     public:
-    int fd
+    int fd = 0
+    bool reopen = false
+
+  template<class T, class EV>
+  class InputClass : public IInputClass:
+    public:
     input_event ev_data[64]
     T prev_ev, event
     vector<T> events
@@ -49,10 +54,19 @@ namespace input:
       fd = _fd
       T::set_fd(fd)
 
-    void handle_event_fd():
+    bool supports_stylus():
+      return input::supports_stylus(fd)
+
+
+
+    int handle_event_fd():
       int bytes = read(fd, ev_data, sizeof(input_event) * 64);
+      if bytes == -1:
+        debug "ERRNO", errno, strerror(errno)
       if bytes < sizeof(input_event) || bytes == -1:
-        return
+        if errno == ENODEV:
+          self.reopen = true
+        return bytes
 
       #ifndef DEV
       // in DEV mode we allow event coalescing between calls to read() for
@@ -82,12 +96,15 @@ namespace input:
           if !syn_dropped:
             event.update(ev_data[i])
 
+      return 0
+
   class Input:
     private:
 
     public:
     int max_fd
     fd_set rdfs
+    bool has_stylus
 
     InputClass<WacomEvent, SynMotionEvent> wacom
     InputClass<TouchEvent, SynMotionEvent> touch
@@ -97,8 +114,11 @@ namespace input:
     vector<SynKeyEvent> all_key_events
 
     Input():
-      FD_ZERO(&rdfs)
+      open_devices()
 
+    void open_devices():
+      close_devices()
+      FD_ZERO(&rdfs)
       // dev only
       // used by remarkable
       #ifdef REMARKABLE
@@ -110,6 +130,9 @@ namespace input:
       #elif KOBO
       self.open_device("/dev/input/event0")
       self.open_device("/dev/input/event1")
+      self.open_device("/dev/input/event2")
+      self.open_device("/dev/input/event3")
+      self.open_device("/dev/input/event4")
       #else
       if USE_RESIM:
         debug "MONITORING RESIM"
@@ -128,13 +151,17 @@ namespace input:
 
       self.monitor(input::ipc_fd[0])
       self.set_scaling(framebuffer::fb_info::display_width, framebuffer::fb_info::display_height)
+      self.has_stylus = supports_stylus()
       return
 
+    void close_devices():
+      vector<IInputClass> fds = { self.touch, self.wacom, self.button}
+      for auto in : fds:
+        if in.fd > 0:
+          close(in.fd)
 
     ~Input():
-      close(self.touch.fd)
-      close(self.wacom.fd)
-      close(self.button.fd)
+      close_devices()
 
     void open_device(string fname):
       fd := open(fname.c_str(), O_RDWR)
@@ -142,20 +169,24 @@ namespace input:
         debug "ERROR OPENING INPUT DEVICE", fname
         return
 
+      debug "OPENING", fname,
       switch input::id_by_capabilities(fd):
         case STYLUS:
           self.wacom.set_fd(fd)
+          debug "AS WACOM"
           break
         case BUTTONS:
           self.button.set_fd(fd)
+          debug "AS BUTTONS"
           break
         case TOUCH:
           self.touch.set_fd(fd)
+          debug "AS TOUCH"
           break
         case INVALID:
         case UNKNOWN:
         default:
-          debug fname, "IS UNKNOWN EVENT DEVICE"
+          debug ": UNKNOWN EVENT DEVICE"
           close(fd)
           if CRASH_ON_BAD_DEVICE:
             exit(1)
@@ -167,7 +198,7 @@ namespace input:
     // NOTE: we assume that we only need max value from here and its anchored at 0,
     // this may not be true in the future
     tuple<struct input_absinfo, struct input_absinfo> read_extents(int fd, x_id, y_id):
-      uint8_t abs_b[ABS_MAX/8 + 1]
+      uint8_t abs_b[ABS_MAX/8 + 1] = {0}
       struct input_absinfo abs_feat
       abs_bit := EVIOCGBIT(EV_ABS, sizeof(abs_b))
       ioctl(fd, abs_bit, abs_b)
@@ -234,6 +265,19 @@ namespace input:
       for auto fd : { self.touch.fd, self.wacom.fd, self.button.fd }:
         ioctl(fd, EVIOCGRAB, false)
 
+    void check_reopen():
+      vector<IInputClass*> inputs = { &self.wacom, &self.touch, &self.button }
+      needs_reopen := false
+      for auto in : inputs:
+        if in->reopen:
+          needs_reopen = true
+          break
+
+      if needs_reopen:
+        self.open_devices()
+
+      for auto in : inputs:
+        in->reopen = false
 
     void listen_all(long timeout_ms = 0):
       fd_set rdfs_cp
@@ -252,6 +296,9 @@ namespace input:
       else:
           retval = select(max_fd, &rdfs_cp, NULL, NULL, NULL)
 
+
+      // TODO: refactor this a bit so that the error handling is cleaner
+      // and we only re-open the specific device that fail
       if retval > 0:
         if FD_ISSET(self.wacom.fd, &rdfs_cp):
           self.wacom.handle_event_fd()
@@ -261,6 +308,8 @@ namespace input:
           self.button.handle_event_fd()
         if FD_ISSET(input::ipc_fd[0], &rdfs_cp):
           self.handle_ipc()
+
+        self.check_reopen()
 
       for auto ev : self.wacom.events:
         self.all_motion_events.push_back(self.wacom.marshal(ev))
@@ -278,9 +327,15 @@ namespace input:
       #endif
       return
 
+    bool supports_stylus():
+      return wacom.supports_stylus() || touch.supports_stylus()
 
   // TODO: should we just put this in the SynMotionEvent?
   static WacomEvent* is_wacom_event(SynMotionEvent &syn_ev):
     return dynamic_cast<WacomEvent*>(syn_ev.original.get())
   static TouchEvent* is_touch_event(SynMotionEvent &syn_ev):
-    return dynamic_cast<TouchEvent*>(syn_ev.original.get())
+    evt := dynamic_cast<TouchEvent*>(syn_ev.original.get())
+    if evt != nullptr && evt->is_touch():
+      return evt
+    return nullptr
+

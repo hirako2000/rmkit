@@ -2,6 +2,7 @@ ROOT=${PWD}
 TARGET=kobo
 KOBO_ROOT=${ROOT}/${TARGET}
 PLUGIN_DIR=${KOBO_ROOT}/mnt/onboard/.adds/rmkit
+CROSS_TC=${CROSS_TC:-arm-linux-gnueabihf}
 
 build_dirs() {
   echo "BUILDING KOBO DIR STRUCTURE"
@@ -17,10 +18,12 @@ build_dirs() {
 copy_files() {
   echo "COPYING FILES TO KOBO ROOT"
   pushd artifacts/${TARGET}
-  cp -v animation_demo input_demo mines remux rpncalc wordlet dumbskull ${PLUGIN_DIR}/bin/apps/
+  cp -v animation_demo input_demo dithering_demo dumbskull eclear harmony mines remux rpncalc wordlet ${PLUGIN_DIR}/bin/apps/
+  cp -v genie simple ${PLUGIN_DIR}/bin/
+
   popd
   pushd ${PLUGIN_DIR}/bin/apps/
-  arm-linux-gnueabihf-strip *
+  ${CROSS_TC}-strip *
   popd
 }
 

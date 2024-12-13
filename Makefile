@@ -27,7 +27,7 @@ $(RUN_APPS): %: rmkit.h
 	cd src/$(@:run_%=%) && make run
 
 $(DOCKER_APPS): %:
-	docker build --tag rmkit:latest .
+	docker build --tag ${DOCKERBUILD} . -f docker/${DOCKERFILE}
 	bash scripts/build/docker_build.sh $(@:%_docker=%)
 
 $(CLEAN_APPS): %:
@@ -47,7 +47,10 @@ install: rmkit.h dest_dir
 
 clean:
 	$(foreach app, $(APPS), cd src/${app} && make clean; cd ${ROOT}; )
-	rm src/build/*
+	rm src/build/* 2>/dev/null || true
+ifdef FBINK
+	cd src/vendor/FBInk/ && make distclean
+endif
 
 default: build
 
@@ -66,15 +69,29 @@ rmkit.h:
 	mkdir src/build > /dev/null || true
 	cd src/rmkit && make
 
+ifdef FBINK
+CPP_FLAGS+=-L./src/vendor/FBInk/Release -l:libfbink.a -D"RMKIT_FBINK=1"
+libfbink:
+	git submodule init
+	git submodule update
+	cd src/vendor/FBInk/ && git submodule init && git submodule update
+	cd src/vendor/FBInk/ && BITMAP=1 make staticlib
+	cp src/vendor/FBInk/fbink.h src/vendor/
+else
+libfbink:
+	@true
+endif
+
+
 docker:
-	docker build --tag rmkit:latest .
+	docker build --tag ${DOCKERBUILD} . -f docker/${DOCKERFILE}
 	bash scripts/build/docker_release.sh
-ifeq ($(ARCH),kobo)
+ifeq ($(TARGET),kobo)
 	bash scripts/build/build_kobo_root.sh
 endif
 
 docker_test:
-	docker build --tag rmkit:latest .
+	docker build --tag ${DOCKERBUILD} . -f docker/${DOCKERFILE}
 	bash scripts/build/docker_test.sh
 
 docker_install: docker
@@ -112,4 +129,4 @@ watch_docs:
 	find ./src/ ./config/ | while true; do entr -d make natural_docs; sleep 0.5; done
 
 
-.PHONY:build view install
+.PHONY:build view install docker

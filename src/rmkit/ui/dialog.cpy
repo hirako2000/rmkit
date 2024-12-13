@@ -7,6 +7,12 @@
 
 
 namespace ui:
+  PLS_DEFINE_SIGNAL(DIALOG_EVENT, string)
+  class DIALOG_EVENTS:
+    public:
+    DIALOG_EVENT close
+  ;
+
   // interface for dialogs
   class IDialog:
     public:
@@ -32,9 +38,10 @@ namespace ui:
     public:
     Scene scene
     ui::InnerScene::DIALOG_VIS_EVENT on_hide
+    DIALOG_EVENTS events
 
     DialogBase(int x, y, w, h): Widget(x,y,w,h):
-      pass
+      self.install_signal_handlers()
 
     bool ignore_event(input::SynMotionEvent&):
       return true
@@ -77,7 +84,11 @@ namespace ui:
       if self.scene == NULL:
          self.build_dialog()
       self.before_show()
-      MainLoop::show_overlay(self.scene)
+
+      MainLoop::replace_overlay(self.scene)
+
+    void hide():
+      ui::MainLoop::hide_overlay(self.scene)
 
   // class: ui::Dialog
   // --- Prototype ---
@@ -135,7 +146,7 @@ namespace ui:
     // function: on_button_selected
     // this is called when the dialog's buttons are pressed
     virtual void on_button_selected(string s):
-      pass
+      self.events.close(s)
 
     void set_title(string s):
       self.titleWidget->text = s
@@ -151,4 +162,4 @@ namespace ui:
       self.buttons = { "OK" }
 
     void on_button_selected(string t):
-      ui::MainLoop::hide_overlay()
+      hide()

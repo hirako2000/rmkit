@@ -117,7 +117,7 @@ namespace app_ui:
 
     void sanitize_filename(string &name):
       for i := 0; i < name.length(); i++:
-        if name[i] == '/':
+        if name[i] == '/' or name[i] == ':':
           name[i] = '_'
 
     auto get_stroke_width():
@@ -160,7 +160,14 @@ namespace app_ui:
         eraser->set_framebuffer(self.layers[cur_layer].fb.get())
 
     bool ignore_event(input::SynMotionEvent &ev):
+      if not ui::MainLoop::in.has_stylus:
+        ev.pressure = 0.5
+        ev.tilt_x = 0.5
+        ev.tilt_y = 0.5
+        return false
+
       return input::is_touch_event(ev) != NULL
+
 
     void on_mouse_move(input::SynMotionEvent &ev):
       if not self.layers[cur_layer].visible:
@@ -356,7 +363,7 @@ namespace app_ui:
       self.mark_redraw()
 
 
-    // we tack on ".hrm" to the filename
+    // we tack on ".[timestamp].hrm" to the filename
     void save_project(bool overwrite=false):
       sanitize_filename(self.project_name)
       debug "SAVING PROJECT", self.project_name

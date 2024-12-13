@@ -4,6 +4,7 @@
 #include <chrono>
 
 #include <time.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
@@ -22,18 +23,17 @@
 #include "config.h"
 
 #ifdef REMARKABLE
-#define TOUCH_FLOOD_EVENT ABS_DISTANCE
 #define DRAW_APP_BEHIND_MODAL
 #define READ_XOCHITL_DATA
 #define GRAB_INPUT
+#define SUSPENDABLE
 #elif KOBO
-#define TOUCH_FLOOD_EVENT ABS_MT_DISTANCE
 #define DYNAMIC_BPP
 #define HAS_ROTATION
 #define PORTRAIT_ONLY
-#else
-#define TOUCH_FLOOD_EVENT ABS_DISTANCE
+#define USE_GRAYSCALE_32BIT
 #endif
+
 
 TIMEOUT := 1
 // all time is in seconds
@@ -144,6 +144,7 @@ class AppBackground: public ui::Widget:
     if app_buffers.find(CURRENT_APP) == app_buffers.end():
       vw, vh := fb->get_virtual_size()
       app_buffers[CURRENT_APP] = make_shared<framebuffer::Snapshot>(vw, vh)
+      app_buffers[CURRENT_APP]->rotation = util::rotation::get()
 
     return app_buffers[CURRENT_APP]
 
@@ -157,10 +158,11 @@ class AppBackground: public ui::Widget:
 
     vfb := self.get_vfb()
     debug "RENDERING", CURRENT_APP
-    if rm2fb::IN_RM2FB_SHIM:
-      fb->waveform_mode = WAVEFORM_MODE_GC16
-    else:
-      fb->waveform_mode = WAVEFORM_MODE_AUTO
+    #ifdef RMKIT_FBINK
+    fb->waveform_mode = WFM_AUTO
+    #else
+    fb->waveform_mode = WAVEFORM_MODE_GC16
+    #endif
 
     vfb->decompress(fb->fbmem)
 
@@ -172,7 +174,8 @@ class AppBackground: public ui::Widget:
     #endif
 
     #ifdef HAS_ROTATION
-    fb->set_rotation(vfb->rotation)
+    if vfb->rotation != -1:
+      fb->set_rotation(vfb->rotation)
     #endif
 
     fb->perform_redraw(true)
@@ -194,11 +197,14 @@ class AppDialog: public ui::Pager:
     void add_shortcuts():
       // draw suspend button in bottom right
       _w, _h := fb->get_display_size()
+      #ifdef SUSPENDABLE
       h_layout := ui::HorizontalLayout(0, 0, _w, _h, self.scene)
       v_layout := ui::VerticalLayout(0, 0, _w, _h, self.scene)
+
       b1 := new SuspendButton(0, 0, 200, 50, self.app)
       h_layout.pack_end(b1)
       v_layout.pack_end(b1)
+      #endif
 
       // draw memory info
       mem_info := proc::read_mem_total()
@@ -235,7 +241,7 @@ class AppDialog: public ui::Pager:
 
     void on_row_selected(string name):
       CURRENT_APP = name
-      ui::MainLoop::hide_overlay()
+      self.hide()
 
     void render_row(ui::HorizontalLayout *row, string option):
       status := string("")
@@ -331,6 +337,7 @@ class App: public IApp:
       debug "DISPLAYED LAUNCHER FOR", int_ms.count(), "MS"
       if int_ms.count() < MIN_DISPLAY_TIME:
         debug "NOT HIDING LAUNCHER BECAUSE INTERVAL < ", MIN_DISPLAY_TIME
+        app_dialog->show()
         return
 
       launch(CURRENT_APP)
@@ -423,12 +430,12 @@ class App: public IApp:
     if line == "show":
       self.show_launcher()
     else if line == "hide":
-      ui::MainLoop::hide_overlay()
+      app_dialog->hide()
     else if line == "back":
-      ui::MainLoop::hide_overlay()
+      app_dialog->hide()
       self.show_last_app()
     else if line == "suspend":
-      if not ui::MainLoop::overlay_is_visible:
+      if not ui::MainLoop::overlay_is_visible():
         app_bg->snapshot()
       on_suspend()
     else if line.find("launch ") == 0:
@@ -436,6 +443,16 @@ class App: public IApp:
       if len(tokens) > 1:
         name := tokens[1]
         api_launch_app(name)
+    else if line.find("pause ") == 0:
+      tokens := str_utils::split(line, ' ')
+      if len(tokens) > 1:
+        name := tokens[1]
+        api_pause_app(name)
+    else if line.find("stop ") == 0:
+      tokens := str_utils::split(line, ' ')
+      if len(tokens) > 1:
+        name := tokens[1]
+        api_stop_app(name)
 
     else:
       debug "UNKNOWN API LINE:", line
@@ -450,6 +467,7 @@ class App: public IApp:
     _ := system("mkdir /run/ 2> /dev/null")
     _ = system("/usr/bin/mkfifo /run/remux.api 2>/dev/null")
     self.ipc_thread = new thread([=]() {
+      prctl(PR_SET_NAME, "fifo\0", 0, 0, 0)
       fd := open("/run/remux.api", O_RDONLY)
 
       string remainder = ""
@@ -479,6 +497,7 @@ class App: public IApp:
     debug "STARTING SUSPEND THREAD"
     version := util::get_remarkable_version()
     self.idle_thread = new thread([=]() {
+      prctl(PR_SET_NAME, "suspend\0", 0, 0, 0)
       last_wake := 0
       while true:
         now := time(NULL)
@@ -520,7 +539,7 @@ class App: public IApp:
 
         if last_action > 0 and SUSPEND_THRESHOLD > 0:
           if now - last_action > SUSPEND_THRESHOLD and now - last_action < 2*SUSPEND_THRESHOLD:
-            if not ui::MainLoop::overlay_is_visible:
+            if not ui::MainLoop::overlay_is_visible():
               app_bg->snapshot()
             on_suspend()
 
@@ -552,7 +571,7 @@ class App: public IApp:
     app := find_app(name)
     if app.bin != "":
       debug "USING API TO LAUNCH", name
-      ui::MainLoop::hide_overlay()
+      app_dialog->hide()
       self.term_apps()
       self.app_bg->snapshot()
       self.launch(name)
@@ -561,13 +580,37 @@ class App: public IApp:
       debug "NO SUCH APP:", name
 
 
+  void api_pause_app(string name):
+    app := find_app(name)
+    get_current_app()
+    if app.name == CURRENT_APP:
+      debug "USING API TO PAUSE", name
+      self.show_launcher()
+
+  void api_stop_app(string name):
+    app := find_app(name)
+    if app.bin != "":
+      debug "USING API TO STOP", name
+      get_current_app()
+      self.kill(name)
+      if name == CURRENT_APP:
+        self.show_launcher()
+      #ifdef REMARKABLE
+      else if name == "xochitl" and CURRENT_APP == APP_XOCHITL.name:
+        self.show_launcher()
+      #elif KOBO
+      else if name == "nickel" and CURRENT_APP == APP_NICKEL.name:
+        self.show_launcher()
+      #endif
+
+
   void show_launcher():
-    if ui::MainLoop::overlay_is_visible:
+    if ui::MainLoop::overlay_is_visible():
       return
 
     #ifdef PORTRAIT_ONLY
-    debug "NOT SHOWING LAUNCHER IN LANDSCAPE"
     if fb->width > fb->height:
+      debug "NOT SHOWING LAUNCHER IN LANDSCAPE"
       return
     #endif
 
@@ -660,12 +703,12 @@ class App: public IApp:
   // TODO: power button will cause suspend screen, why not?
   void on_suspend():
     // suspend only works on REMARKABLE
-    #ifndef REMARKABLE
+    #ifndef SUSPENDABLE
     return
     #endif
 
     debug "SUSPENDING"
-    ui::MainLoop::hide_overlay()
+    app_dialog->hide()
 
     _w, _h := fb->get_display_size()
 
@@ -729,18 +772,35 @@ class App: public IApp:
     if write(fd, &ev, sizeof(ev)) != sizeof(ev):
       debug "COULDNT WRITE EV", errno
 
+  // Figures out what event is supported for flooding
+  uint16_t get_flood_event():
+    vector<uint16_t> features = { ABS_DISTANCE, ABS_MT_DISTANCE, ABS_PRESSURE }
+    vector<string> names = { "ABS_DISTANCE", "ABS_MT_DISTANCE", "ABS_PRESSURE" }
+
+    unsigned long bit[EV_MAX]
+    fd := ui::MainLoop::in.touch.fd
+    ioctl(fd, EVIOCGBIT(0, EV_MAX), bit)
+    for i := 0; i < len(features); i++:
+      if input::check_bit_set(fd, EV_ABS, features[i]):
+        debug "SETTING FLOOD EVENT TO", names[i], features[i]
+        return features[i]
+
+    // return ABS_DISTANCE by default
+    return ABS_DISTANCE
+
 
   input_event* build_touch_flood():
     n := 512 * 8
     num_inst := 4
     input_event *ev = (input_event*) malloc(sizeof(struct input_event) * n * num_inst)
     memset(ev, 0, sizeof(input_event) * n * num_inst)
+    flood_event := get_flood_event()
 
     i := 0
     while i < n:
-      ev[i++] = input_event{ type:EV_ABS, code:TOUCH_FLOOD_EVENT, value:1 }
+      ev[i++] = input_event{ type:EV_ABS, code:flood_event, value:1 }
       ev[i++] = input_event{ type:EV_SYN, code:0, value:0 }
-      ev[i++] = input_event{ type:EV_ABS, code:TOUCH_FLOOD_EVENT, value:2 }
+      ev[i++] = input_event{ type:EV_ABS, code:flood_event, value:2 }
       ev[i++] = input_event{ type:EV_SYN, code:0, value:0 }
 
     return ev
@@ -777,6 +837,13 @@ class App: public IApp:
     for auto app : app_dialog->get_apps():
       if app.name == name:
         bin = app.bin
+      #ifdef REMARKABLE
+      else if name == "xochitl" and app.name == APP_XOCHITL.name:
+        bin = app.bin
+      #elif KOBO
+      else if (name == "Nickel" or name == "nickel") and app.name == APP_NICKEL.name:
+        bin = app.bin
+      #endif
 
     if bin == "":
       return
@@ -844,7 +911,7 @@ class App: public IApp:
     else:
       ioctl(ui::MainLoop::in.button.fd, EVIOCGRAB, false)
 
-    ui::MainLoop::hide_overlay()
+    app_dialog->hide()
 
 
   string get_xochitl_cmd():
@@ -905,8 +972,6 @@ class App: public IApp:
     putenv((char*) "KO_DONT_SET_DEPTH=1")
     putenv((char*) "KO_DONT_GRAB_INPUT=1")
 
-
-
     #if defined(REMARKABLE)
     _ := system("systemctl stop xochitl")
     self.term_apps()
@@ -918,9 +983,8 @@ class App: public IApp:
     get_current_app()
     if APP_MAIN.name == CURRENT_APP:
       debug "RESETTING BPP TO", APP_MAIN.bpp
-    fb->set_screen_depth(APP_MAIN.bpp)
+      fb->set_screen_depth(APP_MAIN.bpp)
     #endif
-
 
     ui::Style::DEFAULT.font_size = 32
 
@@ -946,13 +1010,92 @@ class App: public IApp:
     while true:
       ui::MainLoop::main()
       ui::MainLoop::check_resize()
-      if ui::MainLoop::overlay_is_visible:
+      if ui::MainLoop::overlay_is_visible():
         ui::MainLoop::redraw()
 
       ui::MainLoop::read_input(1000)
       ui::MainLoop::handle_gestures()
 
+  vector<RMApp> get_apps():
+    return self.app_dialog->get_apps()
+
 App app
-def main():
-  LAST_ACTION = time(NULL)
-  app.run()
+def main(int argc, char **argv):
+  if argc > 1:
+    std::string flag(argv[1])
+    str_utils::trim(flag)
+    if flag == "--all-apps":
+      vector<string> apps
+      for auto a : app.get_apps():
+        #ifdef REMARKABLE
+        if a.name == APP_XOCHITL.name:
+          apps.push_back("xochitl")
+        else:
+          apps.push_back(a.name)
+        #elif KOBO
+        if a.name == APP_NICKEL.name:
+          apps.push_back("nickel")
+        else:
+          apps.push_back(a.name)
+        #else
+        apps.push_back(a.name)
+        #endif
+
+      for auto name : apps:
+        print name
+
+    else if flag == "--current-app":
+      for auto a : app.get_apps():
+        // Only if it is running
+        if !a.is_running or (!proc::is_running(a.which) and !proc::is_running(a.bin)):
+          continue
+
+        #ifdef REMARKABLE
+        if a.name == APP_XOCHITL.name:
+          print "xochitl"
+        else:
+          print a.name
+        #elif KOBO
+        if a.name == APP_NICKEL.name:
+          print "nickel"
+        else:
+          print a.name
+        #else
+        print a.name
+        #endif
+        break
+
+    else if flag == "--paused-apps":
+      vector<string> apps
+      for auto a : app.get_apps():
+        // Only if not in the list, and if it is currently running
+        if !a.is_running or std::find(apps.begin(), apps.end(), a.name) != apps.end():
+          continue
+
+        // Ignore current application
+        if proc::is_running(a.which) or proc::is_running(a.bin):
+          continue
+
+        #ifdef REMARKABLE
+        if a.name == APP_XOCHITL.name:
+          apps.push_back("xochitl")
+        else:
+          apps.push_back(a.name)
+        #elif KOBO
+        if a.name == APP_NICKEL.name:
+          apps.push_back("nickel")
+        else:
+          apps.push_back(a.name)
+        #else
+        apps.push_back(a.name)
+        #endif
+
+      for auto name : apps:
+        print name
+
+    else:
+      print "Usage:", argv[0], "[--help|--current-app|--paused-apps|--all-apps]"
+
+  else:
+    LAST_ACTION = time(NULL)
+    app.run()

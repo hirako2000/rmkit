@@ -9,11 +9,13 @@
 // remarkable uses rgb565_le but is grayscale
 #ifdef USE_GRAYSCALE_8BIT
   #define remarkable_color std::uint8_t
+#elif KOBO
+  #define remarkable_color std::uint32_t
 #else
   #define remarkable_color std::uint16_t
 #endif
 
-#define WHITE remarkable_color(0x000FFFFF)
+#define WHITE remarkable_color(0xFFFFFFFF)
 #define GRAY remarkable_color(0x4444)
 #define BLACK remarkable_color(0)
 
@@ -29,7 +31,16 @@ struct rgb_color {
 // 0(black) - 31(white)
 constexpr remarkable_color gray32(int n)
 {
-    return (n << 11) | (2*n << 5) | n;
+
+    if (sizeof(remarkable_color) >= 3) {
+      n = (n * 0xff / 32);
+      return (n << 16) | (n << 8) | n;
+    }
+
+    // The green channel should have six bits, but 31 is only five.
+    // Set the last green bit unless n is zero
+    // otherwise white is actually slightly pink
+    return (n << 11) | (((2*n)|(n!=0))<< 5) | n;
 }
 
 // 0.0(black) - 1.0(white)
@@ -52,10 +63,17 @@ constexpr rgb_color to_rgb8(remarkable_color s)
 
 constexpr float to_float(remarkable_color c)
 {
+    if (sizeof(remarkable_color) >= 3) {
+      return ((c >> 16) & 0xff) * (0.21 / 0xff)  // red
+           + ((c >>  8) & 0xff) * (0.72 / 0xff)  // green
+           + ((c >>  0) & 0xff) * (0.07 / 0xff); // blue
+    }
+
     // 0.21 R + 0.72 G + 0.07 B
     return ((c >> 11) & 31) * (0.21 / 31)  // red
          + ((c >> 5)  & 63) * (0.72 / 63)  // green
          + (c         & 31) * (0.07 / 31); // blue
+
 }
 
 // 16-gray palette (BLACK, WHITE, and 14 shades of gray)
@@ -105,7 +123,7 @@ inline remarkable_color quantize<16>(float c)
     // Optimize BLACK and WHITE
     return c <   (1/16.0) ? BLACK
          : c >= (15/16.0) ? WHITE
-         : SCALE_16[short(std::trunc(c * 15 + 0.5))];
+         : SCALE_16[short(trunc(c * 15 + 0.5))];
 }
 
 } // namespace color

@@ -43,18 +43,30 @@ namespace input:
     unsigned long bit[EV_MAX]
     ioctl(fd, EVIOCGBIT(0, EV_MAX), bit)
 
+    if check_bit_set(fd, EV_ABS, ABS_MT_TRACKING_ID):
+      return TOUCH
+
     if test_bit(EV_KEY, bit):
       if check_bit_set(fd, EV_KEY, BTN_STYLUS) && test_bit(EV_ABS, bit):
         return STYLUS
       if check_bit_set(fd, EV_KEY, KEY_POWER):
         return BUTTONS
 
-    if check_bit_set(fd, EV_ABS, ABS_MT_SLOT):
-      return TOUCH
     if check_bit_set(fd, EV_KEY, BTN_TOOL_PEN):
       return TOUCH
 
     return UNKNOWN
+
+  static bool supports_stylus(int fd):
+    if fd <= 0:
+      return false
+
+    unsigned long bit[EV_MAX]
+    ioctl(fd, EVIOCGBIT(0, EV_MAX), bit)
+    if check_bit_set(fd, EV_KEY, BTN_STYLUS) && test_bit(EV_ABS, bit):
+      return true
+
+    return false
 
   static EV_TYPE id_by_name(int fd):
     char name[256];

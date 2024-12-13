@@ -2,8 +2,12 @@
 
 [![rm1](https://img.shields.io/badge/rM1-supported-green)](https://remarkable.com/store/remarkable)
 [![rm2](https://img.shields.io/badge/rM2-supported-green)](https://remarkable.com/store/remarkable-2)
+[![Kobo Aura One](https://img.shields.io/badge/Kobo_Aura_One-supported-green)](https://us.kobobooks.com/products/kobo-aura-one/)
 [![Kobo Clara HD](https://img.shields.io/badge/Kobo_Clara_HD-supported-green)](https://us.kobobooks.com/products/kobo-clara-hd)
 [![Kobo Libra H20](https://img.shields.io/badge/Kobo_Libra_H2O-supported-green)](https://us.kobobooks.com/products/kobo-libra-h2o)
+[![Kobo Elipsa 2E](https://img.shields.io/badge/Kobo_Elipsa_2E-supported-green)](https://us.kobobooks.com/products/kobo-elipsa-2e)
+[![Kobo Libra Colour](https://img.shields.io/badge/Kobo_Libra_Colour-supported-green)](https://us.kobobooks.com/products/kobo-libra-colour)
+[![Kobo Clara Colour](https://img.shields.io/badge/Kobo_Clara_Colour-supported-green)](https://us.kobobooks.com/products/kobo-clara-colour)
 
 
 [![opkg](https://img.shields.io/badge/OPKG-harmony-blue)](https://github.com/toltec-dev/toltec)
@@ -86,7 +90,7 @@ Wordlet is a clone of the popular [wordle](https://www.powerlanguage.co.uk/wordl
 ### [dumbskull](src/dumbskull)
 
 Dumbskull is a port of the games [donsol](https://100r.co/site/donsol.html) and
-[scoundrel](stfj.net/index2.php?project=art/2011/Scoundrel.pdf). It's a dungeon
+[scoundrel](https://stfj.net/index2.php?project=art/2011/Scoundrel.pdf). It's a dungeon
 crawl themed solitaire that uses a standard playing card deck.
 
 ## Demos
@@ -114,7 +118,7 @@ remux` to get remux, for example.
 
 #### Kobo
 
-**NOTE: Only Kobo Clara HD and Libra H2O are supported**
+**NOTE: Only Kobo Clara HD, Libra H2O and Kobo Elipsa 2E are supported**
 
 To install on Kobo devices, download [KoboRoot.tgz](https://build.rmkit.dev/master/latest/kobo/KoboRoot.tgz) and place it in `KOBOReader/.kobo/` after mounting your Kobo reader. This will install remux and a few demo applications. To disable remux, remove `KOBOReader/.adds/rmkit/enable_remux`
 

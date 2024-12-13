@@ -1,14 +1,17 @@
 HOST?=10.11.99.1
 TARGET?=rm
-CXX_BIN?=arm-linux-gnueabihf-g++
-CC_BIN?=arm-linux-gnueabihf-gcc
-STRIP_BIN?=arm-linux-gnueabihf-strip
-CPP_FLAGS=-pthread -lpthread -fdata-sections -ffunction-sections -Wl,--gc-sections
+CROSS_TC?=arm-linux-gnueabihf
+CXX_BIN?=${CROSS_TC}-g++
+CC_BIN?=${CROSS_TC}-gcc
+STRIP_BIN?=${CROSS_TC}-strip
+CPP_FLAGS=-ldl -pthread -lpthread -fdata-sections -ffunction-sections -Wl,--gc-sections
+
+DOCKERFILE?=Dockerfile.${TARGET}
+DOCKERBUILD=rmkit:${TARGET}
 
 # BUILD STUFF
 ROOT=${PWD}
 BUILD_DIR=src/build
-
 
 VERSION=$(shell cat src/rmkit/version.cpy | sed 's/__version__=//;s/"//g')
 KBD=`ls /dev/input/by-path/*kbd | head -n1`
